@@ -185,6 +185,20 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
       snap.bid_opening_date ? { label: 'Bid Opening', value: snap.bid_opening_date } : null,
     ].filter(Boolean) : [];
 
+    // Update rfp_projects with extracted title and institution
+    const rfpTitle =
+      (snap.rfp_title as string) ||
+      (bidDesk.rfp_title as string) ||
+      file.name.replace(/\.pdf$/i, '').replace(/_/g, ' ');
+    const issuingAuthority =
+      (snap.issuing_authority as string) ||
+      (bidDesk.issuing_authority as string) ||
+      '';
+    await supabase
+      .from('rfp_projects')
+      .update({ title: rfpTitle, client_name: issuingAuthority })
+      .eq('id', project.id);
+
     // Update ai_analysis_results row with parsed data
     const { error: updateError } = await supabase
       .from('ai_analysis_results')
