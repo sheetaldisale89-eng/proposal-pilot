@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -8,16 +8,30 @@ import MetadataPage from './pages/MetadataPage';
 import ProcessingPage from './pages/ProcessingPage';
 import IntelligenceBrief from './pages/IntelligenceBrief';
 import SettingsPage from './pages/SettingsPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import ExportModal from './components/ExportModal';
 import { RfpAnalyzer } from './components/RfpAnalyzer';
 import Sidebar from './components/Sidebar';
 import type { RfpProject } from '@/lib/types';
 
-type Page = 'landing' | 'login' | 'workspace' | 'upload' | 'metadata' | 'processing' | 'brief' | 'settings' | 'analyzer';
+type Page = 'landing' | 'login' | 'workspace' | 'upload' | 'metadata' | 'processing' | 'brief' | 'settings' | 'analyzer' | 'reset-password';
+
+function getInitialPage(): Page {
+  // Supabase password reset links contain #access_token and type=recovery in the hash
+  if (window.location.hash.includes('type=recovery')) return 'reset-password';
+  return 'landing';
+}
 
 export default function App() {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState<Page>('landing');
+  const [currentPage, setCurrentPage] = useState<Page>(getInitialPage);
+
+  // Also catch the case where Supabase redirects to /reset-password path
+  useEffect(() => {
+    if (window.location.pathname === '/reset-password' || window.location.hash.includes('type=recovery')) {
+      setCurrentPage('reset-password');
+    }
+  }, []);
   const [exportOpen, setExportOpen] = useState(false);
   const [activeProject, setActiveProject] = useState<Partial<RfpProject> | null>(null);
   const [uploadedFileInfo, setUploadedFileInfo] = useState<{ name: string; size: string; storagePath: string; projectId: string } | null>(null);
@@ -47,7 +61,8 @@ export default function App() {
 
   const protectedPages: Page[] = ['workspace', 'upload', 'metadata', 'processing', 'brief', 'settings', 'analyzer'];
   const effectivePage: Page = (!user && protectedPages.includes(currentPage)) ? 'login' : currentPage;
-  const resolvedPage: Page = (user && (effectivePage === 'login' || effectivePage === 'landing')) ? 'workspace' : effectivePage;
+  // Don't redirect away from reset-password even if user becomes logged in during the flow
+  const resolvedPage: Page = (currentPage !== 'reset-password' && user && (effectivePage === 'login' || effectivePage === 'landing')) ? 'workspace' : effectivePage;
 
   // Analyzer gets the sidebar wrapper here so RfpAnalyzer stays self-contained
   if (resolvedPage === 'analyzer') {
@@ -71,6 +86,7 @@ export default function App() {
       {resolvedPage === 'processing' && <ProcessingPage onNavigate={navigate} activeProject={activeProject as RfpProject | null} />}
       {resolvedPage === 'brief' && <IntelligenceBrief onNavigate={navigate} project={activeProject as RfpProject | null} />}
       {resolvedPage === 'settings' && <SettingsPage onNavigate={navigate} />}
+      {resolvedPage === 'reset-password' && <ResetPasswordPage onNavigate={navigate} />}
 
       {exportOpen && (
         <ExportModal onClose={() => { setExportOpen(false); navigate('workspace'); }} />

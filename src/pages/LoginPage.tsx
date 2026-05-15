@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import { Brain, Lock, Mail, ArrowRight, Shield } from 'lucide-react';
+import { Brain, Lock, Mail, ArrowRight, Shield, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 
 interface LoginPageProps {
   onNavigate: (page: string) => void;
 }
+
+type Mode = 'signin' | 'signup' | 'forgot';
 
 export default function LoginPage({ onNavigate }: LoginPageProps) {
   const { signIn, signUp, error: authError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<Mode>('signin');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [resetSent, setResetSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +40,35 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
     }
   };
 
-  const displayError = localError || authError;
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalError(null);
+    if (!email) {
+      setLocalError('Please enter your email address.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/reset-password',
+      });
+      if (error) {
+        setLocalError(error.message);
+      } else {
+        setResetSent(true);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const switchMode = (next: Mode) => {
+    setLocalError(null);
+    setResetSent(false);
+    setMode(next);
+  };
+
+  const displayError = localError || (mode !== 'forgot' ? authError : null);
 
   return (
     <div className="min-h-screen bg-background flex relative overflow-hidden">
@@ -101,102 +133,186 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
         <div className="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12">
           <div className="w-full max-w-md animate-slide-up">
             <div className="rounded-2xl p-8" style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.2)', boxShadow: '0 0 60px rgba(0,229,255,0.06), 0 0 100px rgba(139,92,246,0.04)' }}>
-              <div className="mb-8">
-                <div className="flex items-center gap-2 mb-1 lg:hidden">
-                  <Brain className="w-5 h-5 text-neon-cyan" />
-                  <span className="font-serif font-semibold text-text-primary">ProposalPilot</span>
-                </div>
-                <h1 className="font-serif text-3xl font-bold text-text-primary mb-2">
-                  {mode === 'signin' ? 'Sign in' : 'Create account'}
-                </h1>
-                <p className="text-text-muted text-sm">
-                  {mode === 'signin'
-                    ? 'Access your pursuit intelligence workspace.'
-                    : 'Register to start analyzing BFSI RFPs.'}
-                </p>
-              </div>
 
-              {displayError && (
-                <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(255,77,109,0.08)', border: '1px solid rgba(255,77,109,0.25)', color: '#FF4D6D' }}>
-                  {displayError}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs text-text-muted uppercase tracking-wider mb-2">Email address</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="you@organization.com"
-                      required
-                      className="w-full pl-10 pr-4 py-3 rounded-lg text-sm text-text-primary placeholder-text-muted"
-                      style={{ background: '#0F1B2E', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }}
-                      onFocus={e => (e.target.style.borderColor = 'rgba(0,229,255,0.4)')}
-                      onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
-                    />
+              {/* Forgot password panel */}
+              {mode === 'forgot' ? (
+                <>
+                  <div className="mb-8">
+                    <button
+                      type="button"
+                      onClick={() => switchMode('signin')}
+                      className="flex items-center gap-1.5 text-text-muted text-sm mb-5 hover:text-text-secondary transition-colors"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      Back to sign in
+                    </button>
+                    <h1 className="font-serif text-3xl font-bold text-text-primary mb-2">Reset password</h1>
+                    <p className="text-text-muted text-sm">
+                      Enter your email and we'll send a reset link.
+                    </p>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs text-text-muted uppercase tracking-wider mb-2">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      required
-                      minLength={6}
-                      className="w-full pl-10 pr-4 py-3 rounded-lg text-sm text-text-primary placeholder-text-muted"
-                      style={{ background: '#0F1B2E', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }}
-                      onFocus={e => (e.target.style.borderColor = 'rgba(0,229,255,0.4)')}
-                      onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
-                    />
-                  </div>
-                </div>
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all hover:opacity-90 hover:scale-[1.01] mt-6"
-                  style={{ background: 'linear-gradient(135deg, #00E5FF, #00B8CC)', color: '#030712', boxShadow: '0 0 30px rgba(0,229,255,0.25)' }}
-                >
-                  {loading ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-background/30 border-t-background rounded-full animate-spin" />
-                      {mode === 'signin' ? 'Signing in...' : 'Creating account...'}
+                  {displayError && (
+                    <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(255,77,109,0.08)', border: '1px solid rgba(255,77,109,0.25)', color: '#FF4D6D' }}>
+                      {displayError}
+                    </div>
+                  )}
+
+                  {resetSent ? (
+                    <div className="px-4 py-4 rounded-lg text-sm" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)', color: '#00E5FF' }}>
+                      Password reset email sent. Check your inbox.
                     </div>
                   ) : (
-                    <>
-                      {mode === 'signin' ? 'Sign In' : 'Create Account'}
-                      <ArrowRight className="w-4 h-4" />
-                    </>
+                    <form onSubmit={handleForgotPassword} className="space-y-4">
+                      <div>
+                        <label className="block text-xs text-text-muted uppercase tracking-wider mb-2">Email address</label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            placeholder="you@organization.com"
+                            required
+                            className="w-full pl-10 pr-4 py-3 rounded-lg text-sm text-text-primary placeholder-text-muted"
+                            style={{ background: '#0F1B2E', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }}
+                            onFocus={e => (e.target.style.borderColor = 'rgba(0,229,255,0.4)')}
+                            onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full py-3.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all hover:opacity-90 hover:scale-[1.01] mt-2"
+                        style={{ background: 'linear-gradient(135deg, #00E5FF, #00B8CC)', color: '#030712', boxShadow: '0 0 30px rgba(0,229,255,0.25)' }}
+                      >
+                        {loading ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+                            Sending...
+                          </div>
+                        ) : (
+                          <>Send reset link <ArrowRight className="w-4 h-4" /></>
+                        )}
+                      </button>
+                    </form>
                   )}
-                </button>
-              </form>
+                </>
+              ) : (
+                <>
+                  <div className="mb-8">
+                    <div className="flex items-center gap-2 mb-1 lg:hidden">
+                      <Brain className="w-5 h-5 text-neon-cyan" />
+                      <span className="font-serif font-semibold text-text-primary">ProposalPilot</span>
+                    </div>
+                    <h1 className="font-serif text-3xl font-bold text-text-primary mb-2">
+                      {mode === 'signin' ? 'Sign in' : 'Create account'}
+                    </h1>
+                    <p className="text-text-muted text-sm">
+                      {mode === 'signin'
+                        ? 'Access your pursuit intelligence workspace.'
+                        : 'Register to start analyzing BFSI RFPs.'}
+                    </p>
+                  </div>
 
-              <div className="my-6 flex items-center gap-3">
-                <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
-                <span className="text-text-muted text-xs uppercase tracking-wider">or</span>
-                <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
-              </div>
+                  {displayError && (
+                    <div className="mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(255,77,109,0.08)', border: '1px solid rgba(255,77,109,0.25)', color: '#FF4D6D' }}>
+                      {displayError}
+                    </div>
+                  )}
 
-              <button
-                type="button"
-                onClick={() => setMode(m => (m === 'signin' ? 'signup' : 'signin'))}
-                className="w-full py-3 rounded-lg font-medium text-sm text-text-secondary transition-all hover:text-text-primary"
-                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)')}
-              >
-                {mode === 'signin' ? 'New user? Create an account' : 'Already have an account? Sign in'}
-              </button>
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-xs text-text-muted uppercase tracking-wider mb-2">Email address</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={e => setEmail(e.target.value)}
+                          placeholder="you@organization.com"
+                          required
+                          className="w-full pl-10 pr-4 py-3 rounded-lg text-sm text-text-primary placeholder-text-muted"
+                          style={{ background: '#0F1B2E', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }}
+                          onFocus={e => (e.target.style.borderColor = 'rgba(0,229,255,0.4)')}
+                          onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs text-text-muted uppercase tracking-wider">Password</label>
+                        {mode === 'signin' && (
+                          <button
+                            type="button"
+                            onClick={() => switchMode('forgot')}
+                            className="text-xs transition-colors"
+                            style={{ color: 'rgba(0,229,255,0.7)' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = '#00E5FF')}
+                            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(0,229,255,0.7)')}
+                          >
+                            Forgot password?
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={e => setPassword(e.target.value)}
+                          placeholder="••••••••"
+                          required
+                          minLength={6}
+                          className="w-full pl-10 pr-4 py-3 rounded-lg text-sm text-text-primary placeholder-text-muted"
+                          style={{ background: '#0F1B2E', border: '1px solid rgba(255,255,255,0.08)', outline: 'none' }}
+                          onFocus={e => (e.target.style.borderColor = 'rgba(0,229,255,0.4)')}
+                          onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                        />
+                      </div>
+                    </div>
 
-              <p className="text-center text-text-muted text-xs mt-6">For authorized users only.</p>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-3.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all hover:opacity-90 hover:scale-[1.01] mt-6"
+                      style={{ background: 'linear-gradient(135deg, #00E5FF, #00B8CC)', color: '#030712', boxShadow: '0 0 30px rgba(0,229,255,0.25)' }}
+                    >
+                      {loading ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+                          {mode === 'signin' ? 'Signing in...' : 'Creating account...'}
+                        </div>
+                      ) : (
+                        <>
+                          {mode === 'signin' ? 'Sign In' : 'Create Account'}
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </form>
+
+                  <div className="my-6 flex items-center gap-3">
+                    <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                    <span className="text-text-muted text-xs uppercase tracking-wider">or</span>
+                    <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
+                    className="w-full py-3 rounded-lg font-medium text-sm text-text-secondary transition-all hover:text-text-primary"
+                    style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)')}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)')}
+                  >
+                    {mode === 'signin' ? 'New user? Create an account' : 'Already have an account? Sign in'}
+                  </button>
+
+                  <p className="text-center text-text-muted text-xs mt-6">For authorized users only.</p>
+                </>
+              )}
             </div>
           </div>
         </div>
