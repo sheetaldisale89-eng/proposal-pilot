@@ -183,32 +183,32 @@ Deno.serve(async (req: Request) => {
     const htmlContent = buildEmailHtml(analysis as Record<string, unknown>, projectTitle);
     const noteSection = note ? `\n\nNote from sender: ${note}` : "";
 
-    const resendPayload = {
-      from: "ProposalPilot BFSI <onboarding@resend.dev>",
-      to,
-      subject: `Intelligence Brief: ${rfpTitle} | ProposalPilot BFSI`,
-      html: htmlContent,
-      text: `Intelligence Brief: ${rfpTitle}\n\nSent via ProposalPilot BFSI from ${userEmail}.${noteSection}`,
-    };
+    const recipientEmails = to;
+    const emailHtml = htmlContent;
 
-    const resendRes = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${resendKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(resendPayload),
-    });
-
-    const resendData = await resendRes.json();
-
-    if (!resendRes.ok) {
-      return new Response(JSON.stringify({ error: resendData.message || "Failed to send email via Resend." }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const resendResponse = await fetch(
+      'https://api.resend.com/emails',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('RESEND_API_KEY')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: 'ProposalPilot BFSI <onboarding@resend.dev>',
+          to: recipientEmails,
+          subject: `Intelligence Brief: ${rfpTitle} | ProposalPilot BFSI`,
+          html: emailHtml
+        })
+      }
+    );
+    const resendResult = await resendResponse.json();
+    console.log('Resend result:', JSON.stringify(resendResult));
+    if (!resendResponse.ok) {
+      throw new Error(`Resend failed: ${JSON.stringify(resendResult)}`);
     }
 
-    return new Response(JSON.stringify({ success: true, sent_to: to, resend_id: resendData.id }), {
+    return new Response(JSON.stringify({ success: true, sent_to: to, resend_id: resendResult.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
