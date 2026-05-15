@@ -165,7 +165,11 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
     }, 1000);
 
   } catch (err) {
-    setError(err instanceof Error ? err.message : 'Upload/analysis failed. Please try again.');
+    console.error('FULL ERROR:', err);
+    setError(err instanceof Error
+      ? `Error: ${err.message}`
+      : `Unknown error: ${JSON.stringify(err)}`
+    );
   } finally {
     setUploading(false);
   }
