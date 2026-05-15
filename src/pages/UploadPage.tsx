@@ -118,36 +118,112 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
       body: { rfpText },
     });
 
-    if (fnError) throw new Error(fnError.message || 'Analysis function failed');
-    if (fnData?.error) throw new Error(fnData.error);
+    console.log('Edge function response:', { fnData, fnError });
 
-    const analysisJson = JSON.parse(fnData.json);
+    if (fnError) throw new Error(`Edge function error: ${fnError.message || JSON.stringify(fnError)}`);
+    if (!fnData) throw new Error('Edge function returned no data');
+    if (fnData.error) throw new Error(`Analysis error: ${fnData.error}`);
+    if (!fnData.json) throw new Error('Edge function response missing JSON field');
+
+    let analysisJson: Record<string, unknown>;
+    try {
+      analysisJson = JSON.parse(fnData.json);
+    } catch {
+      throw new Error(`Failed to parse analysis JSON: ${String(fnData.json).slice(0, 200)}`);
+    }
+    console.log('Parsed analysis JSON keys:', Object.keys(analysisJson));
     setUploadProgress(80);
+
+    // Map nested AI JSON fields to flat DB columns
+    const snap = (analysisJson.rfp_snapshot ?? {}) as Record<string, unknown>;
+    const bidDesk = (analysisJson.bid_desk_summary ?? {}) as Record<string, unknown>;
+    const eligObj = (analysisJson.eligibility_criteria ?? {}) as Record<string, unknown>;
+    const scopeObj = (analysisJson.scope_of_work ?? {}) as Record<string, unknown>;
+    const evalObj = (analysisJson.evaluation_criteria ?? {}) as Record<string, unknown>;
+    const redFlags = (analysisJson.red_flags_and_ambiguities ?? {}) as Record<string, unknown>;
+    const strategy = (analysisJson.proposal_strategy_recommendations ?? {}) as Record<string, unknown>;
+    const nextSteps = (analysisJson.recommended_next_steps ?? {}) as Record<string, unknown>;
+    const clarQs = Array.isArray(analysisJson.clarification_questions) ? analysisJson.clarification_questions : [];
+    const complianceList = Array.isArray(analysisJson.compliance_checklist) ? analysisJson.compliance_checklist : [];
+    const meta = (analysisJson.analysis_metadata ?? {}) as Record<string, unknown>;
+
+    const executiveSummary = [
+      bidDesk.one_line_summary,
+      bidDesk.go_no_go_signal ? `Go/No-Go: ${bidDesk.go_no_go_signal}` : null,
+    ].filter(Boolean).join('\n\n') || null;
+
+    const rfpObjective = bidDesk.opportunity_type as string || meta.document_type as string || null;
+
+    const scopeSummary = (scopeObj.scope_summary as string) || null;
+    const eligibilitySummary = [
+      ...(Array.isArray(eligObj.financial_requirements) ? eligObj.financial_requirements : []),
+      ...(Array.isArray(eligObj.technical_requirements) ? eligObj.technical_requirements : []),
+    ].join('; ') || null;
+    const complianceSummary = complianceList.length > 0 ? `${complianceList.length} compliance items identified` : null;
+    const commercialSummary = (bidDesk.strategic_relevance as string) || null;
+    const technicalSummary = (scopeObj.scope_summary as string) || (bidDesk.bid_complexity as string) || null;
+
+    const allRedFlags = [
+      ...(Array.isArray(redFlags.commercial_red_flags) ? redFlags.commercial_red_flags : []),
+      ...(Array.isArray(redFlags.delivery_red_flags) ? redFlags.delivery_red_flags : []),
+      ...(Array.isArray(redFlags.legal_or_contractual_red_flags) ? redFlags.legal_or_contractual_red_flags : []),
+      ...(Array.isArray(redFlags.technical_red_flags) ? redFlags.technical_red_flags : []),
+      ...(Array.isArray(redFlags.eligibility_red_flags) ? redFlags.eligibility_red_flags : []),
+      ...(Array.isArray(redFlags.timeline_red_flags) ? redFlags.timeline_red_flags : []),
+    ];
+
+    const allRecommendedActions = [
+      ...(Array.isArray(nextSteps.within_24_hours) ? nextSteps.within_24_hours : []),
+      ...(Array.isArray(nextSteps.within_3_days) ? nextSteps.within_3_days : []),
+      ...(Array.isArray(nextSteps.before_submission) ? nextSteps.before_submission : []),
+    ];
+
+    const keyDates = snap ? [
+      snap.submission_deadline ? { label: 'Submission Deadline', value: snap.submission_deadline } : null,
+      snap.pre_bid_meeting_date ? { label: 'Pre-Bid Meeting', value: snap.pre_bid_meeting_date } : null,
+      snap.clarification_deadline ? { label: 'Clarification Deadline', value: snap.clarification_deadline } : null,
+      snap.bid_opening_date ? { label: 'Bid Opening', value: snap.bid_opening_date } : null,
+    ].filter(Boolean) : [];
 
     // Update ai_analysis_results row with parsed data
     const { error: updateError } = await supabase
       .from('ai_analysis_results')
       .update({
         status: 'completed',
-        executive_summary: analysisJson.executive_summary || null,
-        rfp_objective: analysisJson.rfp_objective || null,
-        scope_summary: analysisJson.scope_summary || null,
-        eligibility_summary: analysisJson.eligibility_summary || null,
-        compliance_summary: analysisJson.compliance_summary || null,
-        commercial_summary: analysisJson.commercial_summary || null,
-        technical_summary: analysisJson.technical_summary || null,
-        key_dates: analysisJson.key_dates || [],
-        eligibility_criteria: analysisJson.eligibility_criteria || [],
-        scope_of_work: analysisJson.scope_of_work || [],
-        compliance_matrix: analysisJson.compliance_matrix || [],
-        evaluation_criteria: analysisJson.evaluation_criteria || [],
-        required_documents: analysisJson.required_documents || [],
-        risks_and_red_flags: analysisJson.risks_and_red_flags || [],
-        clarification_questions: analysisJson.clarification_questions || [],
-        win_themes: analysisJson.win_themes || [],
-        recommended_actions: analysisJson.recommended_actions || [],
+        executive_summary: executiveSummary,
+        rfp_objective: rfpObjective,
+        scope_summary: scopeSummary,
+        eligibility_summary: eligibilitySummary,
+        compliance_summary: complianceSummary,
+        commercial_summary: commercialSummary,
+        technical_summary: technicalSummary,
+        key_dates: keyDates,
+        eligibility_criteria: [
+          ...(Array.isArray(eligObj.legal_and_entity_requirements) ? eligObj.legal_and_entity_requirements : []),
+          ...(Array.isArray(eligObj.financial_requirements) ? eligObj.financial_requirements : []),
+          ...(Array.isArray(eligObj.technical_requirements) ? eligObj.technical_requirements : []),
+          ...(Array.isArray(eligObj.experience_requirements) ? eligObj.experience_requirements : []),
+          ...(Array.isArray(eligObj.certifications_required) ? eligObj.certifications_required : []),
+        ],
+        scope_of_work: [
+          ...(Array.isArray(scopeObj.in_scope_items) ? scopeObj.in_scope_items : []),
+          ...(Array.isArray(scopeObj.functional_scope) ? scopeObj.functional_scope : []),
+          ...(Array.isArray(scopeObj.technical_scope) ? scopeObj.technical_scope : []),
+        ],
+        compliance_matrix: complianceList,
+        evaluation_criteria: [
+          ...(Array.isArray(evalObj.technical_evaluation_criteria) ? evalObj.technical_evaluation_criteria : []),
+          ...(Array.isArray(evalObj.financial_evaluation_criteria) ? evalObj.financial_evaluation_criteria : []),
+        ],
+        required_documents: Array.isArray(analysisJson.submission_requirements)
+          ? analysisJson.submission_requirements
+          : ((analysisJson.submission_requirements as Record<string, unknown>)?.supporting_documents ?? []) as unknown[],
+        risks_and_red_flags: allRedFlags,
+        clarification_questions: clarQs,
+        win_themes: Array.isArray(strategy.win_themes) ? strategy.win_themes : [],
+        recommended_actions: allRecommendedActions,
         full_analysis_json: analysisJson,
-        confidence_score: analysisJson.confidence_score || 0,
+        confidence_score: meta.analysis_confidence === 'High' ? 90 : meta.analysis_confidence === 'Medium' ? 70 : 50,
         completed_at: new Date().toISOString(),
       })
       .eq('id', analysisRecord.id);
