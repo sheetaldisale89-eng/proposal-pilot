@@ -19,7 +19,7 @@ export default function App() {
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('landing');
   const [exportOpen, setExportOpen] = useState(false);
-  const [activeProject, setActiveProject] = useState<RfpProject | null>(null);
+  const [activeProject, setActiveProject] = useState<Partial<RfpProject> | null>(null);
   const [uploadedFileInfo, setUploadedFileInfo] = useState<{ name: string; size: string; storagePath: string; projectId: string } | null>(null);
 
   const navigate = (page: string, data?: unknown) => {
@@ -68,8 +68,8 @@ export default function App() {
       {resolvedPage === 'workspace' && <WorkspacePage onNavigate={navigate} />}
       {resolvedPage === 'upload' && <UploadPage onNavigate={navigate} onFileUploaded={setUploadedFileInfo} />}
       {resolvedPage === 'metadata' && <MetadataPage onNavigate={navigate} fileInfo={uploadedFileInfo} />}
-      {resolvedPage === 'processing' && <ProcessingPage onNavigate={navigate} activeProject={activeProject} />}
-      {resolvedPage === 'brief' && <IntelligenceBrief onNavigate={navigate} project={activeProject} />}
+      {resolvedPage === 'processing' && <ProcessingPage onNavigate={navigate} activeProject={activeProject as RfpProject | null} />}
+      {resolvedPage === 'brief' && <IntelligenceBrief onNavigate={navigate} project={activeProject as RfpProject | null} />}
       {resolvedPage === 'settings' && <SettingsPage onNavigate={navigate} />}
 
       {exportOpen && (

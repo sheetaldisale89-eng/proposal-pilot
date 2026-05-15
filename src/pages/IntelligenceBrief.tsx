@@ -94,8 +94,10 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
   const [actionStatus, setActionStatus] = useState<Record<number, string>>({});
   const contentRef = useRef<HTMLDivElement>(null);
 
+  const projectId = project?.id || localStorage.getItem('lastProjectId');
+
   useEffect(() => {
-    if (!project?.id) {
+    if (!projectId) {
       setFetchError('No project selected.');
       setLoading(false);
       return;
@@ -103,7 +105,7 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
     supabase
       .from('ai_analysis_results')
       .select('*')
-      .eq('project_id', project.id)
+      .eq('project_id', projectId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) {
@@ -115,7 +117,7 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
         }
         setLoading(false);
       });
-  }, [project?.id]);
+  }, [projectId]);
 
   const scrollToSection = (id: string) => {
     setActiveSection(id);

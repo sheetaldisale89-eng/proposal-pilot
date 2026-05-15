@@ -234,10 +234,10 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
     const info = { name: file.name, size: formatBytes(file.size), storagePath, projectId: project.id };
     setUploadedFile(info);
     onFileUploaded(info);
+    localStorage.setItem('lastProjectId', project.id);
 
-    // Auto-navigate to processing/brief page after 1 second
     setTimeout(() => {
-      onNavigate('processing'); // Shows loading animation
+      onNavigate('brief', { id: project.id });
     }, 1000);
 
   } catch (err) {
