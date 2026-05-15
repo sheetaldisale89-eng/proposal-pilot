@@ -63,20 +63,28 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
 
     setUploadProgress(30);
 
+    // Extract text from PDF client-side before uploading
+    const { extractTextFromPdf } = await import('@/lib/pdfUtils');
+    const rfpText = await extractTextFromPdf(file);
+    if (!rfpText || rfpText.length < 200) {
+      throw new Error('PDF extraction failed or text too short (< 200 words)');
+    }
+    setUploadProgress(40);
+
     // Upload PDF to Supabase Storage
     const storagePath = `${user.id}/${project.id}/${file.name}`;
     const { error: storageError } = await supabase.storage
-      .from('rfp-files')
+      .from('rfp-documents')
       .upload(storagePath, file, { upsert: false, contentType: 'application/pdf' });
 
     if (storageError) throw storageError;
-    setUploadProgress(40);
+    setUploadProgress(50);
 
     // Create rfp_files row
     const { data: rfpFileData, error: fileRowError } = await supabase.from('rfp_files').insert({
       project_id: project.id,
       uploaded_by: user.id,
-      bucket_name: 'rfp-files',
+      bucket_name: 'rfp-documents',
       storage_path: storagePath,
       original_file_name: file.name,
       file_type: 'application/pdf',
@@ -85,14 +93,6 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
     }).select().single();
 
     if (fileRowError) throw fileRowError;
-    setUploadProgress(50);
-
-    // Extract text from PDF
-    const { extractTextFromPdf } = await import('@/lib/pdfUtils');
-    const rfpText = await extractTextFromPdf(storagePath);
-    if (!rfpText || rfpText.length < 200) {
-      throw new Error('PDF extraction failed or text too short (< 200 words)');
-    }
     setUploadProgress(60);
 
     // Create ai_analysis_results row (initial status: queued)
@@ -113,80 +113,15 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
     if (analysisCreateError) throw analysisCreateError;
     setUploadProgress(65);
 
-    // Call OpenAI LLM
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
-    if (!apiKey) throw new Error('OpenAI API key not configured');
-
-    const analysisResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4-turbo',
-        max_tokens: 4000,
-        messages: [
-          {
-            role: 'system',
-            content: `You are ProposalPilot BFSI, an expert AI Bid Desk Analyst. Analyze the BFSI RFP and output EXACTLY in this format:
-
-PART 1: Valid JSON with these fields (all required):
-{
-  "rfp_objective": "One-line summary of RFP goal",
-  "executive_summary": "2-3 paragraph executive brief",
-  "scope_summary": "Key scope items",
-  "eligibility_summary": "Key eligibility criteria",
-  "compliance_summary": "Key compliance requirements",
-  "commercial_summary": "Key commercial terms",
-  "technical_summary": "Key technical requirements",
-  "key_dates": [{"date": "YYYY-MM-DD", "event": "description"}],
-  "eligibility_criteria": ["criterion 1", "criterion 2"],
-  "scope_of_work": ["item 1", "item 2"],
-  "compliance_matrix": [{"requirement": "description", "mandatory": true}],
-  "evaluation_criteria": [{"criterion": "description", "weightage": "percentage"}],
-  "required_documents": ["doc 1", "doc 2"],
-  "risks_and_red_flags": [{"risk": "description", "severity": "high|medium|low"}],
-  "clarification_questions": [{"question": "text", "priority": "high|medium|low"}],
-  "win_themes": ["theme 1", "theme 2"],
-  "recommended_actions": ["action 1", "action 2"],
-  "confidence_score": 85.5
-}
-
-PART 2: Full analysis JSON (same as above, but comprehensive).
-
-Output JSON first, then markdown. Do NOT add preamble or markdown backticks.`,
-          },
-          { role: 'user', content: `Analyze this BFSI RFP:\n\n${rfpText}` },
-        ],
-      }),
+    // Call analyze-rfp edge function server-side
+    const { data: fnData, error: fnError } = await supabase.functions.invoke('analyze-rfp', {
+      body: { rfpText },
     });
 
-    if (!analysisResponse.ok) {
-      const errBody = await analysisResponse.json();
-      throw new Error(errBody.error?.message || `API error ${analysisResponse.status}`);
-    }
+    if (fnError) throw new Error(fnError.message || 'Analysis function failed');
+    if (fnData?.error) throw new Error(fnData.error);
 
-    const analysisData = await analysisResponse.json() as { choices: Array<{ message: { content: string } }> };
-    const raw = analysisData.choices[0]?.message?.content ?? '';
-
-    // Parse JSON from response
-    const jsonStart = raw.indexOf('{');
-    if (jsonStart === -1) throw new Error('No JSON in API response');
-
-    let depth = 0;
-    let jsonEnd = -1;
-    for (let i = jsonStart; i < raw.length; i++) {
-      if (raw[i] === '{') depth++;
-      else if (raw[i] === '}') {
-        depth--;
-        if (depth === 0) { jsonEnd = i; break; }
-      }
-    }
-    if (jsonEnd === -1) throw new Error('Malformed JSON');
-
-    const jsonStr = raw.slice(jsonStart, jsonEnd + 1);
-    const analysisJson = JSON.parse(jsonStr);
+    const analysisJson = JSON.parse(fnData.json);
     setUploadProgress(80);
 
     // Update ai_analysis_results row with parsed data
