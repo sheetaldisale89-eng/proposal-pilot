@@ -18,22 +18,39 @@ interface AiAnalysis {
   completed_at: string | null;
 }
 
+// ─── Sidebar sections in new order ───────────────────────────────────────────
 const sidebarSections = [
-  { id: 'decision', label: 'Decision Summary' },
-  { id: 'snapshot', label: 'RFP Snapshot' },
-  { id: 'eligibility', label: 'Eligibility & Compliance' },
-  { id: 'scope', label: 'Scope of Work' },
+  { id: 'snapshot',   label: 'RFP Snapshot' },
+  { id: 'scope',      label: 'Scope of Work' },
+  { id: 'eligibility',label: 'Eligibility & Compliance' },
   { id: 'evaluation', label: 'Evaluation Criteria' },
-  { id: 'risk', label: 'Risk Radar' },
-  { id: 'questions', label: 'Clarification Questions' },
-  { id: 'strategy', label: 'Proposal Strategy' },
-  { id: 'actions', label: 'Next Actions' },
+  { id: 'risk',       label: 'Risk Radar' },
+  { id: 'questions',  label: 'Clarification Questions' },
+  { id: 'strategy',   label: 'Proposal Strategy' },
+  { id: 'actions',    label: 'Next Actions' },
+  { id: 'decision',   label: 'Decision Summary' },
 ];
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function safeStr(val: unknown, fallback = 'Not specified'): string {
+  if (val === null || val === undefined || val === '') return fallback;
+  return String(val);
+}
+function safeArr<T>(val: unknown): T[] {
+  if (!val || !Array.isArray(val)) return [];
+  return val as T[];
+}
+function safeObj(val: unknown): Record<string, unknown> {
+  if (!val || typeof val !== 'object' || Array.isArray(val)) return {};
+  return val as Record<string, unknown>;
+}
+
+// ─── Shared UI primitives ─────────────────────────────────────────────────────
 function SectionHeader({ number, title }: { number: string; title: string }) {
   return (
     <div className="flex items-center gap-4 mb-6">
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center font-mono font-bold text-xs flex-shrink-0" style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center font-mono font-bold text-xs flex-shrink-0"
+        style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
         {number}
       </div>
       <h2 className="font-serif text-2xl font-bold text-text-primary">{title}</h2>
@@ -41,309 +58,251 @@ function SectionHeader({ number, title }: { number: string; title: string }) {
   );
 }
 
-function RiskBadge({ level }: { level: string }) {
-  const config = ({
-    'High': { color: '#FF4D6D', bg: 'rgba(255,77,109,0.08)', border: 'rgba(255,77,109,0.25)' },
-    'Medium-High': { color: '#FF4D6D', bg: 'rgba(255,77,109,0.06)', border: 'rgba(255,77,109,0.2)' },
-    'Medium': { color: '#FFB020', bg: 'rgba(255,176,32,0.08)', border: 'rgba(255,176,32,0.25)' },
-    'Low': { color: '#00F5A0', bg: 'rgba(0,245,160,0.08)', border: 'rgba(0,245,160,0.25)' },
-  } as Record<string, { color: string; bg: string; border: string }>)[level] || { color: '#9CAEC4', bg: 'transparent', border: 'transparent' };
+function EmptyState({ message }: { message?: string }) {
   return (
-    <span className="px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ background: config.bg, border: `1px solid ${config.border}`, color: config.color }}>
-      {level || 'Unknown'}
+    <div className="rounded-xl p-6 text-center" style={{ background: '#08111F', border: '1px dashed rgba(255,255,255,0.1)' }}>
+      <AlertCircle className="w-6 h-6 mx-auto mb-3" style={{ color: '#9CAEC4' }} />
+      <p className="text-text-muted text-sm">{message || 'This data was not found in the analyzed pages. Consider re-uploading with a higher page limit.'}</p>
+    </div>
+  );
+}
+
+function MandatoryBadge({ mandatory }: { mandatory: boolean }) {
+  return (
+    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
+      style={{ background: mandatory ? 'rgba(255,77,109,0.12)' : 'rgba(156,174,196,0.12)', color: mandatory ? '#FF4D6D' : '#9CAEC4' }}>
+      {mandatory ? 'Mandatory' : 'Desirable'}
     </span>
   );
 }
 
-function safeStr(val: unknown, fallback = 'Not specified'): string {
-  if (val === null || val === undefined || val === '') return fallback;
-  return String(val);
+function AssessmentBadge({ value }: { value: string }) {
+  const v = value.toLowerCase();
+  const color = v.startsWith('can meet') ? '#00F5A0' : v.startsWith('cannot') ? '#FF4D6D' : '#FFB020';
+  const bg = v.startsWith('can meet') ? 'rgba(0,245,160,0.1)' : v.startsWith('cannot') ? 'rgba(255,77,109,0.1)' : 'rgba(255,176,32,0.1)';
+  return (
+    <span className="px-2 py-0.5 rounded text-[10px] font-bold"
+      style={{ background: bg, color }}>{value}</span>
+  );
 }
 
-function safeArr<T>(val: unknown): T[] {
-  if (!val || !Array.isArray(val)) return [];
-  return val as T[];
+function PriorityBadge({ priority }: { priority: string }) {
+  const p = priority.toLowerCase();
+  const color = p === 'high' ? '#FF4D6D' : p === 'medium' ? '#FFB020' : '#9CAEC4';
+  const bg = p === 'high' ? 'rgba(255,77,109,0.1)' : p === 'medium' ? 'rgba(255,176,32,0.1)' : 'rgba(156,174,196,0.1)';
+  return (
+    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase"
+      style={{ background: bg, color }}>{priority}</span>
+  );
 }
 
-function safeObj(val: unknown): Record<string, unknown> {
-  if (!val || typeof val !== 'object' || Array.isArray(val)) return {};
-  return val as Record<string, unknown>;
+function GoNoGoBadge({ value }: { value: string }) {
+  const v = value.toLowerCase();
+  const isPursue = v === 'pursue';
+  const isCaution = v.includes('caution');
+  const color = isPursue ? '#00F5A0' : isCaution ? '#FFB020' : '#FF4D6D';
+  const bg = isPursue ? 'rgba(0,245,160,0.1)' : isCaution ? 'rgba(255,176,32,0.1)' : 'rgba(255,77,109,0.1)';
+  const border = isPursue ? 'rgba(0,245,160,0.3)' : isCaution ? 'rgba(255,176,32,0.3)' : 'rgba(255,77,109,0.3)';
+  return (
+    <div className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl mb-6"
+      style={{ background: bg, border: `2px solid ${border}`, boxShadow: `0 0 40px ${bg}` }}>
+      <div className="w-3 h-3 rounded-full" style={{ background: color }} />
+      <span className="font-serif text-3xl font-bold" style={{ color }}>{value}</span>
+    </div>
+  );
 }
 
+function ComplexityDot({ level }: { level: string }) {
+  const l = level.toLowerCase();
+  const color = l === 'high' ? '#FF4D6D' : l === 'medium' ? '#FFB020' : '#00F5A0';
+  return <span className="inline-flex items-center gap-1.5">
+    <span className="w-2 h-2 rounded-full inline-block" style={{ background: color }} />
+    <span style={{ color }} className="font-semibold">{level}</span>
+  </span>;
+}
+
+function inferProofRequired(criterion: string, subCriterion: string): string {
+  const text = (criterion + ' ' + subCriterion).toLowerCase();
+  if (text.includes('turnover') || text.includes('revenue') || text.includes('financial'))
+    return 'Audited financial statements, CA certificate on letterhead';
+  if (text.includes('experience') || text.includes('project') || text.includes('engagement'))
+    return 'Work orders / LoA, completion certificates, client references on letterhead';
+  if (text.includes('team') || text.includes('resource') || text.includes('staff') || text.includes('personnel'))
+    return 'CVs with qualification certificates, employment proof';
+  if (text.includes('certif') || text.includes('iso') || text.includes('cmmi'))
+    return 'Valid certificate copies (with expiry date)';
+  if (text.includes('incorporation') || text.includes('legal') || text.includes('entity'))
+    return 'Certificate of incorporation, MoA/AoA';
+  if (text.includes('pan') || text.includes('gst') || text.includes('tax'))
+    return 'PAN card copy, GST registration certificate';
+  return 'Supporting documentation as specified by the issuing authority';
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function IntelligenceBrief({ onNavigate, project }: IntelligenceBriefProps) {
   const [analysis, setAnalysis] = useState<AiAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState('decision');
-  const [actionStatus, setActionStatus] = useState<Record<number, string>>({});
+  const [activeSection, setActiveSection] = useState('snapshot');
+  const [actionStatus, setActionStatus] = useState<Record<string, boolean>>({});
   const contentRef = useRef<HTMLDivElement>(null);
 
   const projectId = project?.id || localStorage.getItem('lastProjectId');
 
   useEffect(() => {
-    if (!projectId) {
-      setFetchError('No project selected.');
-      setLoading(false);
-      return;
-    }
+    if (!projectId) { setFetchError('No project selected.'); setLoading(false); return; }
     supabase
       .from('ai_analysis_results')
       .select('*')
       .eq('project_id', projectId)
       .maybeSingle()
       .then(({ data, error }) => {
-        if (error) {
-          setFetchError(`Failed to load analysis: ${error.message}`);
-        } else if (!data) {
-          setFetchError('No analysis found for this project.');
-        } else {
-          setAnalysis(data as AiAnalysis);
-        }
+        if (error) setFetchError(`Failed to load analysis: ${error.message}`);
+        else if (!data) setFetchError('No analysis found for this project.');
+        else setAnalysis(data as AiAnalysis);
         setLoading(false);
       });
   }, [projectId]);
 
   const scrollToSection = (id: string) => {
     setActiveSection(id);
-    const el = document.getElementById(`section-${id}`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
-  const cycleActionStatus = (idx: number) => {
-    setActionStatus(prev => {
-      const current = prev[idx] || 'not-started';
-      const next = current === 'not-started' ? 'in-progress' : current === 'in-progress' ? 'completed' : 'not-started';
-      return { ...prev, [idx]: next };
-    });
+    document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const rfpTitle = project?.title || 'RFP Intelligence Brief';
   const institution = project?.client_name || '—';
   const segment = project?.institution_type || '—';
   const dueDate = project?.due_date
-    ? new Date(project.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-    : '—';
+    ? new Date(project.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#00E5FF' }} />
-          <p className="text-text-muted text-sm">Loading analysis...</p>
-        </div>
+  if (loading) return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#00E5FF' }} />
+        <p className="text-text-muted text-sm">Loading analysis...</p>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (fetchError) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 max-w-sm text-center">
-          <AlertCircle className="w-10 h-10" style={{ color: '#FF4D6D' }} />
-          <p className="text-text-primary font-semibold">Analysis Not Found</p>
-          <p className="text-text-muted text-sm">{fetchError}</p>
-          <button
-            onClick={() => onNavigate('workspace')}
-            className="mt-2 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}
-          >
-            Back to Workspace
-          </button>
-        </div>
+  if (fetchError) return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4 max-w-sm text-center">
+        <AlertCircle className="w-10 h-10" style={{ color: '#FF4D6D' }} />
+        <p className="text-text-primary font-semibold">Analysis Not Found</p>
+        <p className="text-text-muted text-sm">{fetchError}</p>
+        <button onClick={() => onNavigate('workspace')}
+          className="mt-2 px-5 py-2 rounded-lg text-sm font-medium"
+          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
+          Back to Workspace
+        </button>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (!analysis?.full_analysis_json) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 max-w-sm text-center">
-          <AlertCircle className="w-10 h-10" style={{ color: '#FFB020' }} />
-          <p className="text-text-primary font-semibold">Analysis Data Not Found</p>
-          <p className="text-text-muted text-sm">Analysis data not found. Please re-upload the document.</p>
-          <button
-            onClick={() => onNavigate('upload')}
-            className="mt-2 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}
-          >
-            Re-upload Document
-          </button>
-        </div>
+  if (!analysis?.full_analysis_json) return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4 max-w-sm text-center">
+        <AlertCircle className="w-10 h-10" style={{ color: '#FFB020' }} />
+        <p className="text-text-primary font-semibold">Analysis Data Not Found</p>
+        <p className="text-text-muted text-sm">Analysis data not found. Please re-upload the document.</p>
+        <button onClick={() => onNavigate('upload')}
+          className="mt-2 px-5 py-2 rounded-lg text-sm font-medium"
+          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
+          Re-upload Document
+        </button>
       </div>
-    );
-  }
+    </div>
+  );
 
-  // Safe extraction from full_analysis_json — supports BOTH old and new schema shapes
+  // ─── Data extraction ────────────────────────────────────────────────────────
   const full = safeObj(analysis.full_analysis_json);
 
-  // New schema keys (from updated system prompt)
-  const bidDesk = safeObj(full.bid_desk_summary);
-  const snap = safeObj(full.rfp_snapshot);
-  // New schema: scope_of_work is an array of workstream objects
-  const scopeWorkstreams = safeArr<Record<string, unknown>>(full.scope_of_work);
-  // New schema: eligibility_criteria is a flat array of criterion objects
-  const eligibilityArray = safeArr<Record<string, unknown>>(full.eligibility_criteria);
-  // New schema: evaluation_criteria is a flat array
-  const evaluationArray = safeArr<Record<string, unknown>>(full.evaluation_criteria);
-  // New schema: red_flags is a flat array
-  const redFlagsArray = safeArr<Record<string, unknown>>(full.red_flags);
-  // New schema: legal_commercial_risks is a flat array
-  const legalRisksArray = safeArr<Record<string, unknown>>(full.legal_commercial_risks);
-  // New schema: clarification_questions is a flat array
-  const clarificationQsNew = safeArr<Record<string, unknown>>(full.clarification_questions);
-  // New schema: win_themes is a flat array of objects
-  const winThemesArray = safeArr<Record<string, unknown>>(full.win_themes);
-  // New schema: next_steps is an object with arrays
-  const nextStepsObj = safeObj(full.next_steps);
+  const snap      = safeObj(full.rfp_snapshot);
+  const bidDesk   = safeObj(full.bid_desk_summary);
+  const nextSteps = safeObj(full.next_steps ?? (safeObj(full.recommended_next_steps)));
 
-  // Old schema fallbacks
-  const meta = safeObj(full.analysis_metadata);
-  const strategyObj = safeObj(full.proposal_strategy_recommendations);
-  const redFlagsObj = safeObj(full.red_flags_and_ambiguities);
-  const evalObj = safeObj(full.evaluation_criteria_old ?? full.evaluation_criteria);
-  const eligObj = safeObj(full.eligibility_criteria_obj);
-  const scopeObj = safeObj(full.scope_of_work_obj);
+  type EligItem   = { criterion: string; requirement: string; mandatory: boolean; evidence_required: string; ey_assessment: string };
+  type ScopeItem  = { workstream: string; what_bank_wants: string; deliverables: string[]; timeline: string };
+  type EvalItem   = { stage: string; criterion: string; sub_criterion: string; parameters: string; marks: number | string; max_marks: number | string };
+  type RedFlag    = { flag: string; detail: string; risk_level: string; recommended_action: string };
+  type LegalRisk  = { risk: string; detail: string; impact: string; suggested_clarification: string };
+  type ClarQ      = { question: string; section_reference: string; priority: string; why_critical: string };
+  type WinTheme   = { theme: string; rationale: string; proof_points: string };
 
-  // Resolve recommendation — try new key first, then old
-  const recommendation = safeStr(bidDesk.go_no_go || bidDesk.go_no_go_signal, project?.recommendation || 'Pending Analysis');
+  const eligibilityArr   = safeArr<EligItem>(full.eligibility_criteria);
+  const scopeArr         = safeArr<ScopeItem>(full.scope_of_work);
+  const evaluationArr    = safeArr<EvalItem>(full.evaluation_criteria);
+  const redFlagsArr      = safeArr<RedFlag>(full.red_flags);
+  const legalRisksArr    = safeArr<LegalRisk>(full.legal_commercial_risks);
+  const clarQsArr        = safeArr<ClarQ>(full.clarification_questions);
+  const winThemesArr     = safeArr<WinTheme>(full.win_themes);
+
+  const next24h         = safeArr<string>(nextSteps.within_24_hours);
+  const next3d          = safeArr<string>(nextSteps.within_3_days);
+  const nextPreBid      = safeArr<string>(nextSteps.before_pre_bid);
+  const nextSubmission  = safeArr<string>(nextSteps.before_submission);
+
+  const recommendation  = safeStr(bidDesk.go_no_go || bidDesk.go_no_go_signal, project?.recommendation || 'Pending Analysis');
+  const goNoGoReasoning = safeStr(bidDesk.go_no_go_reasoning, '');
+  const topRisks        = safeArr<string>(bidDesk.top_risks);
+  const immediateActions= safeArr<string>(bidDesk.immediate_actions);
+  const strategicFit    = safeStr(bidDesk.strategic_fit, 'Not specified');
+  const bidComplexity   = safeStr(bidDesk.bid_complexity, 'Not specified');
+  const oneLiner        = safeStr(bidDesk.one_line_summary, '');
+
+  // Eligibility summary bar
+  const totalCriteria  = eligibilityArr.length;
+  const mandatoryCount = eligibilityArr.filter(e => e.mandatory !== false).length;
+  const canMeetCount   = eligibilityArr.filter(e => safeStr(e.ey_assessment).toLowerCase().startsWith('can meet')).length;
+  const atRiskCount    = eligibilityArr.filter(e => {
+    const a = safeStr(e.ey_assessment).toLowerCase();
+    return a.startsWith('cannot') || a.startsWith('partially');
+  }).length;
+
+  // Eval marks totals
+  const totalTechMarks = evaluationArr
+    .filter(e => safeStr(e.stage).toLowerCase().includes('tech'))
+    .reduce((sum, e) => sum + (Number(e.max_marks) || 0), 0);
+  const totalFinMarks = evaluationArr
+    .filter(e => safeStr(e.stage).toLowerCase().includes('fin'))
+    .reduce((sum, e) => sum + (Number(e.max_marks) || 0), 0);
+
+  // Sort risk flags: High → Medium → Low
+  const riskOrder = (l: string) => l.toLowerCase() === 'high' ? 0 : l.toLowerCase() === 'medium' ? 1 : 2;
+  const sortedRedFlags = [...redFlagsArr].sort((a, b) => riskOrder(safeStr(a.risk_level)) - riskOrder(safeStr(b.risk_level)));
+
+  // Sort clarification questions: High → Medium → Low
+  const sortedClarQs = [...clarQsArr].sort((a, b) => riskOrder(safeStr(a.priority)) - riskOrder(safeStr(b.priority)));
+
   const confidenceScore = analysis?.confidence_score ?? null;
 
-  // Reasons to bid / caution
-  const topReasonsToBid = safeArr<string>(bidDesk.top_reasons_to_bid);
-  const topCautions = safeArr<string>(bidDesk.top_reasons_for_caution);
-  const immediateActions = safeArr<string>(bidDesk.immediate_actions);
-  const topRisks = safeArr<string>(bidDesk.top_risks);
-
-  // Eligibility — new schema is flat array; old schema is nested object
-  const resolvedEligibility: { text: string; mandatory?: boolean; evidence?: string; assessment?: string }[] =
-    eligibilityArray.length > 0
-      ? eligibilityArray.map(item => ({
-          text: safeStr(item.criterion || item.requirement || item.text || JSON.stringify(item)),
-          mandatory: item.mandatory !== false,
-          evidence: safeStr(item.evidence_required, ''),
-          assessment: safeStr(item.ey_assessment, ''),
-        }))
-      : [
-          ...safeArr<unknown>(eligObj.legal_and_entity_requirements),
-          ...safeArr<unknown>(eligObj.financial_requirements),
-          ...safeArr<unknown>(eligObj.technical_requirements),
-          ...safeArr<unknown>(eligObj.experience_requirements),
-          ...safeArr<unknown>(eligObj.certifications_required),
-        ].map(item => ({
-          text: typeof item === 'string' ? item : safeStr((item as Record<string, unknown>)?.requirement || (item as Record<string, unknown>)?.criterion || JSON.stringify(item)),
-        }));
-
-  // Scope — new schema is array of workstream objects; old schema is nested object
-  const resolvedScope: { title: string; detail: string; deliverables: string[] }[] =
-    scopeWorkstreams.length > 0
-      ? scopeWorkstreams.map(ws => ({
-          title: safeStr(ws.workstream, 'Workstream'),
-          detail: safeStr(ws.what_bank_wants, ''),
-          deliverables: safeArr<string>(ws.deliverables),
-        }))
-      : [
-          ...safeArr<unknown>(scopeObj.in_scope_items),
-          ...safeArr<unknown>(scopeObj.functional_scope),
-          ...safeArr<unknown>(scopeObj.technical_scope),
-        ].map(item => ({
-          title: '',
-          detail: typeof item === 'string' ? item : safeStr((item as Record<string, unknown>)?.description || JSON.stringify(item)),
-          deliverables: [],
-        }));
-
-  // Evaluation — new schema is flat array with marks; old schema is nested
-  const resolvedEvalRows: { stage: string; criterion: string; subCriterion: string; marks: string; maxMarks: string }[] =
-    evaluationArray.length > 0 && typeof evaluationArray[0] === 'object' && 'stage' in evaluationArray[0]
-      ? evaluationArray.map(row => ({
-          stage: safeStr(row.stage, '—'),
-          criterion: safeStr(row.criterion, '—'),
-          subCriterion: safeStr(row.sub_criterion, '—'),
-          marks: safeStr(row.marks, '—'),
-          maxMarks: safeStr(row.max_marks, '—'),
-        }))
-      : [];
-
-  const evalMethod = safeStr(evalObj.evaluation_method, '');
-  const evalWeights = safeArr<Record<string, unknown>>(evalObj.scoring_weights);
-  const evalTechnical = safeArr<string>(evalObj.technical_evaluation_criteria);
-  const evalFinancial = safeArr<string>(evalObj.financial_evaluation_criteria);
-
-  // Red flags — new schema is flat array of objects with flag/detail/risk_level
-  const resolvedRedFlags: { cat: string; text: string; detail: string; level: string; action: string }[] =
-    redFlagsArray.length > 0
-      ? redFlagsArray.map(f => ({
-          cat: safeStr(f.risk_level, 'Risk'),
-          text: safeStr(f.flag || f.text, ''),
-          detail: safeStr(f.detail, ''),
-          level: safeStr(f.risk_level, 'Medium'),
-          action: safeStr(f.recommended_action, ''),
-        }))
-      : [
-          ...safeArr<unknown>(redFlagsObj.commercial_red_flags).map(f => ({ cat: 'Commercial', text: String(f), detail: '', level: 'Medium', action: '' })),
-          ...safeArr<unknown>(redFlagsObj.delivery_red_flags).map(f => ({ cat: 'Delivery', text: String(f), detail: '', level: 'Medium', action: '' })),
-          ...safeArr<unknown>(redFlagsObj.legal_or_contractual_red_flags).map(f => ({ cat: 'Legal', text: String(f), detail: '', level: 'High', action: '' })),
-          ...safeArr<unknown>(redFlagsObj.technical_red_flags).map(f => ({ cat: 'Technical', text: String(f), detail: '', level: 'Medium', action: '' })),
-          ...safeArr<unknown>(redFlagsObj.eligibility_red_flags).map(f => ({ cat: 'Eligibility', text: String(f), detail: '', level: 'High', action: '' })),
-          ...safeArr<unknown>(redFlagsObj.timeline_red_flags).map(f => ({ cat: 'Timeline', text: String(f), detail: '', level: 'Medium', action: '' })),
-        ];
-
-  // Clarification questions — new schema has question/section_reference/priority/why_critical
-  const resolvedClarificationQs =
-    clarificationQsNew.length > 0
-      ? clarificationQsNew
-      : safeArr<Record<string, unknown>>(full.clarification_questions);
-
-  // Win themes — new schema is array of objects with theme/rationale/proof_points
-  const resolvedWinThemes =
-    winThemesArray.length > 0
-      ? winThemesArray
-      : safeArr<string>(strategyObj.win_themes).map(w => ({ theme: w, rationale: '', proof_points: '' }));
-
-  const positioning = safeStr(strategyObj.recommended_positioning, '');
-  const differentiators = safeArr<string>(strategyObj.differentiators_to_highlight);
-
-  // Next steps — new schema: next_steps.within_24_hours etc; old: recommended_next_steps.within_24_hours
-  const oldNextSteps = safeObj(full.recommended_next_steps);
-  const nextActions24h = safeArr<string>(nextStepsObj.within_24_hours || oldNextSteps.within_24_hours);
-  const nextActions3d = safeArr<string>(nextStepsObj.within_3_days || oldNextSteps.within_3_days);
-  const nextActionsPreBid = safeArr<string>(nextStepsObj.before_pre_bid || oldNextSteps.before_pre_bid_or_clarification_deadline);
-  const nextActionsSubmit = safeArr<string>(nextStepsObj.before_submission || oldNextSteps.before_submission);
-
-  const allNextActions = [
-    ...nextActions24h.map(t => ({ task: t, when: '24h' })),
-    ...nextActions3d.map(t => ({ task: t, when: '3 days' })),
-    ...nextActionsPreBid.map(t => ({ task: t, when: 'Pre-bid' })),
-    ...nextActionsSubmit.map(t => ({ task: t, when: 'Pre-submission' })),
+  // ─── Snapshot rows ──────────────────────────────────────────────────────────
+  const snapFields = [
+    { label: 'Issuing Authority',         key: 'issuing_authority',        highlight: false },
+    { label: 'RFP Reference Number',      key: 'rfp_reference',            highlight: false },
+    { label: 'RFP Title',                 key: 'rfp_title',                highlight: false },
+    { label: 'Release Date',              key: 'release_date',             highlight: false },
+    { label: 'Pre-Bid Meeting Date',      key: 'pre_bid_meeting',          highlight: false },
+    { label: 'Clarification Deadline',    key: 'clarification_deadline',   highlight: false },
+    { label: 'Submission Deadline',       key: 'submission_deadline',      highlight: true  },
+    { label: 'Bid Opening Date',          key: 'bid_opening_date',         highlight: false },
+    { label: 'Contract Duration',         key: 'contract_duration',        highlight: false },
+    { label: 'Estimated Contract Value',  key: 'contract_value',           highlight: false },
+    { label: 'EMD Amount',                key: 'emd_amount',               highlight: false },
+    { label: 'Performance Bank Guarantee',key: 'performance_guarantee',    highlight: false },
+    { label: 'Evaluation Method',         key: 'evaluation_method',        highlight: false },
+    { label: 'Submission Mode',           key: 'submission_mode',          highlight: false },
   ];
-
-  const snapRows = [
-    { label: 'Issuing Authority', value: safeStr(snap.issuing_authority || snap.issuing_organization, '') },
-    { label: 'RFP Reference', value: safeStr(snap.rfp_reference || snap.rfp_reference_number, '') },
-    { label: 'Submission Deadline', value: safeStr(snap.submission_deadline, '') },
-    { label: 'Pre-Bid Meeting', value: safeStr(snap.pre_bid_meeting || snap.pre_bid_meeting_date, '') },
-    { label: 'Clarification Deadline', value: safeStr(snap.clarification_deadline, '') },
-    { label: 'Bid Opening', value: safeStr(snap.bid_opening_date, '') },
-    { label: 'Contract Duration', value: safeStr(snap.contract_duration, '') },
-    { label: 'Estimated Value', value: safeStr(snap.contract_value || snap.estimated_contract_value, '') },
-    { label: 'EMD Amount', value: safeStr(snap.emd_amount, '') },
-    { label: 'Performance Guarantee', value: safeStr(snap.performance_guarantee || snap.performance_bank_guarantee, '') },
-    { label: 'Evaluation Method', value: safeStr(snap.evaluation_method, '') },
-    { label: 'Submission Mode', value: safeStr(snap.submission_mode, '') },
-    { label: 'Sector', value: safeStr(meta.sector, '') },
-    { label: 'Document Type', value: safeStr(meta.document_type, '') },
-  ].filter(r => r.value && r.value !== 'Not specified in the RFP' && r.value !== 'Not specified');
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Sticky top header */}
-      <div className="sticky top-0 z-30 px-6 py-3 flex items-center justify-between border-b backdrop-blur-md" style={{ background: 'rgba(3,7,18,0.95)', borderColor: 'rgba(255,255,255,0.06)' }}>
+      {/* ── Top header ────────────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-30 px-6 py-3 flex items-center justify-between border-b backdrop-blur-md"
+        style={{ background: 'rgba(3,7,18,0.95)', borderColor: 'rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => onNavigate('workspace')}
-            className="flex items-center gap-1.5 text-text-muted text-sm hover:text-text-primary transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Workspace
+          <button onClick={() => onNavigate('workspace')}
+            className="flex items-center gap-1.5 text-text-muted text-sm hover:text-text-primary transition-colors">
+            <ArrowLeft className="w-4 h-4" /> Workspace
           </button>
           <div className="w-px h-5" style={{ background: 'rgba(255,255,255,0.1)' }} />
           <div>
@@ -356,33 +315,26 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigate('export')}
+          <button onClick={() => onNavigate('export')}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-background transition-all hover:scale-105"
-            style={{ background: 'linear-gradient(135deg, #FFD166, #FFB020)', boxShadow: '0 0 20px rgba(255,209,102,0.2)' }}
-          >
-            <Download className="w-3.5 h-3.5" />
-            PDF
+            style={{ background: 'linear-gradient(135deg, #FFD166, #FFB020)', boxShadow: '0 0 20px rgba(255,209,102,0.2)' }}>
+            <Download className="w-3.5 h-3.5" /> PDF
           </button>
-          <button
-            onClick={() => onNavigate('export')}
+          <button onClick={() => onNavigate('export')}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-105"
-            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)', color: '#00E5FF' }}
-          >
-            <FileDown className="w-3.5 h-3.5" />
-            Word
+            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)', color: '#00E5FF' }}>
+            <FileDown className="w-3.5 h-3.5" /> Word
           </button>
         </div>
       </div>
 
       <div className="flex flex-1">
-        {/* Left sidebar nav */}
-        <div className="w-56 flex-shrink-0 sticky top-14 h-[calc(100vh-56px)] overflow-y-auto py-6 px-3 space-y-1" style={{ background: '#08111F', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+        {/* ── Left sidebar ──────────────────────────────────────────────────── */}
+        <div className="w-56 flex-shrink-0 sticky top-14 h-[calc(100vh-56px)] overflow-y-auto py-6 px-3 space-y-1"
+          style={{ background: '#08111F', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
           <div className="text-[10px] text-text-muted uppercase tracking-widest px-3 mb-3">Report Sections</div>
           {sidebarSections.map((s, i) => (
-            <button
-              key={s.id}
-              onClick={() => scrollToSection(s.id)}
+            <button key={s.id} onClick={() => scrollToSection(s.id)}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-left transition-all"
               style={{
                 background: activeSection === s.id ? 'rgba(0,229,255,0.08)' : 'transparent',
@@ -390,520 +342,578 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                 border: activeSection === s.id ? '1px solid rgba(0,229,255,0.15)' : '1px solid transparent',
               }}
               onMouseEnter={e => { if (activeSection !== s.id) { e.currentTarget.style.color = '#F5F9FF'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; } }}
-              onMouseLeave={e => { if (activeSection !== s.id) { e.currentTarget.style.color = '#9CAEC4'; e.currentTarget.style.background = 'transparent'; } }}
-            >
+              onMouseLeave={e => { if (activeSection !== s.id) { e.currentTarget.style.color = '#9CAEC4'; e.currentTarget.style.background = 'transparent'; } }}>
               <span className="text-[10px] font-mono opacity-50">{String(i + 1).padStart(2, '0')}</span>
               {s.label}
             </button>
           ))}
         </div>
 
-        {/* Main content */}
+        {/* ── Main content ───────────────────────────────────────────────────── */}
         <div ref={contentRef} className="flex-1 overflow-auto">
           <div className="max-w-4xl mx-auto px-8 py-10 space-y-16">
 
-            {/* DEBUG BLOCK — shows available top-level keys in full_analysis_json */}
+            {/* DEBUG: available top-level keys */}
             <pre style={{ color: 'lime', fontSize: 10, background: '#000', padding: 8, overflow: 'auto', maxHeight: 200 }}>
               {JSON.stringify(Object.keys(analysis?.full_analysis_json || {}), null, 2)}
             </pre>
 
-            {/* SECTION 1 — DECISION SUMMARY */}
-            <section id="section-decision">
-              <SectionHeader number="01" title="Decision Summary" />
-              <div className="mb-6">
-                <div className="inline-flex items-center gap-3 px-6 py-3 rounded-xl mb-6" style={{ background: 'rgba(255,209,102,0.08)', border: '2px solid rgba(255,209,102,0.3)', boxShadow: '0 0 30px rgba(255,209,102,0.1)' }}>
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#FFD166' }} />
-                  <span className="font-serif text-2xl font-bold" style={{ color: '#FFD166' }}>{recommendation}</span>
-                </div>
-              </div>
-
-              {safeStr(bidDesk.go_no_go_reasoning || bidDesk.one_line_summary || analysis?.executive_summary, '') && (
-                <div className="rounded-2xl p-6 mb-5" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <p className="text-text-secondary leading-relaxed whitespace-pre-line">
-                    {safeStr(bidDesk.go_no_go_reasoning || bidDesk.one_line_summary || analysis?.executive_summary, '')}
-                  </p>
-                </div>
-              )}
-
-              {topRisks.length > 0 && (
-                <div className="rounded-xl p-4 mb-4" style={{ background: 'rgba(255,77,109,0.04)', border: '1px solid rgba(255,77,109,0.15)' }}>
-                  <div className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#FF4D6D' }}>Top Risks</div>
-                  <ul className="space-y-2">
-                    {topRisks.map((r, i) => (
-                      <li key={i} className="flex items-start gap-2.5 text-sm text-text-secondary">
-                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#FF4D6D' }} />
-                        {safeStr(r)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {(topReasonsToBid.length > 0 || topCautions.length > 0) && (
-                <div className="grid md:grid-cols-2 gap-4 mb-5">
-                  {topReasonsToBid.length > 0 && (
-                    <div className="rounded-xl p-4" style={{ background: 'rgba(0,245,160,0.04)', border: '1px solid rgba(0,245,160,0.15)' }}>
-                      <div className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#00F5A0' }}>Reasons to Bid</div>
-                      <ul className="space-y-2">
-                        {topReasonsToBid.map((r, i) => (
-                          <li key={i} className="flex items-start gap-2.5 text-sm text-text-secondary">
-                            <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#00F5A0' }} />
-                            {safeStr(r)}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {topCautions.length > 0 && (
-                    <div className="rounded-xl p-4" style={{ background: 'rgba(255,176,32,0.04)', border: '1px solid rgba(255,176,32,0.15)' }}>
-                      <div className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#FFB020' }}>Caution Points</div>
-                      <ul className="space-y-2">
-                        {topCautions.map((c, i) => (
-                          <li key={i} className="flex items-start gap-2.5 text-sm text-text-secondary">
-                            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#FFB020' }} />
-                            {safeStr(c)}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {immediateActions.length > 0 && (
-                <div className="rounded-2xl p-5" style={{ background: 'rgba(255,209,102,0.04)', border: '1px solid rgba(255,209,102,0.15)' }}>
-                  <div className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#FFD166' }}>Immediate Actions</div>
-                  <ul className="space-y-2">
-                    {immediateActions.map((a, i) => (
-                      <li key={i} className="flex items-start gap-2.5 text-sm text-text-secondary">
-                        <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#FFD166' }} />
-                        {safeStr(a)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* SECTION 2 — RFP SNAPSHOT */}
+            {/* ══ 01. RFP SNAPSHOT ══════════════════════════════════════════ */}
             <section id="section-snapshot">
-              <SectionHeader number="02" title="RFP Snapshot" />
-              {snapRows.length > 0 ? (
+              <SectionHeader number="01" title="RFP Snapshot" />
+              {snapFields.some(f => snap[f.key]) ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {snapRows.map((f, i) => (
-                    <div key={i} className="rounded-xl p-4" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">{f.label}</div>
-                      <div className="text-text-primary font-medium text-sm">{f.value}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-text-muted text-sm">Snapshot data not available in this analysis.</p>
-              )}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* SECTION 3 — ELIGIBILITY */}
-            <section id="section-eligibility">
-              <SectionHeader number="03" title="Eligibility & Compliance" />
-              {resolvedEligibility.length > 0 ? (
-                <div className="space-y-3">
-                  {resolvedEligibility.map((item, i) => (
-                    <div key={i} className="rounded-xl p-4" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div className="flex gap-4">
-                        <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 font-mono text-xs font-bold" style={{ background: 'rgba(0,229,255,0.08)', color: '#00E5FF' }}>
-                          {String(i + 1).padStart(2, '0')}
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-text-secondary text-sm leading-relaxed">{item.text}</p>
-                          {item.evidence && (
-                            <p className="text-text-muted text-xs mt-1.5">Evidence: {item.evidence}</p>
-                          )}
-                          {item.assessment && (
-                            <p className="text-xs mt-1.5 font-medium" style={{ color: item.assessment.startsWith('Can Meet') ? '#00F5A0' : item.assessment.startsWith('Cannot') ? '#FF4D6D' : '#FFB020' }}>
-                              {item.assessment}
-                            </p>
-                          )}
-                        </div>
-                        {item.mandatory !== undefined && (
-                          <div className="flex-shrink-0">
-                            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded" style={{ background: item.mandatory ? 'rgba(255,77,109,0.1)' : 'rgba(0,245,160,0.08)', color: item.mandatory ? '#FF4D6D' : '#00F5A0' }}>
-                              {item.mandatory ? 'Mandatory' : 'Desirable'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-text-muted text-sm">Eligibility criteria not extracted. Manual review recommended.</p>
-              )}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* SECTION 4 — SCOPE OF WORK */}
-            <section id="section-scope">
-              <SectionHeader number="04" title="Scope of Work" />
-              {analysis?.scope_summary && (
-                <div className="rounded-2xl p-5 mb-5" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.15)' }}>
-                  <p className="text-text-secondary text-sm leading-relaxed">{analysis.scope_summary}</p>
-                </div>
-              )}
-              {resolvedScope.length > 0 ? (
-                <div className="space-y-4">
-                  {resolvedScope.map((ws, i) => (
-                    <div key={i} className="rounded-xl p-5" style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
-                      {ws.title && (
-                        <div className="font-semibold text-sm mb-2" style={{ color: '#00E5FF' }}>{ws.title}</div>
-                      )}
-                      {ws.detail && (
-                        <p className="text-text-secondary text-sm leading-relaxed mb-3">{ws.detail}</p>
-                      )}
-                      {ws.deliverables.length > 0 && (
-                        <ul className="space-y-1.5">
-                          {ws.deliverables.map((d, j) => (
-                            <li key={j} className="flex items-start gap-2 text-xs text-text-muted">
-                              <ChevronRight className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: '#00E5FF' }} />
-                              {safeStr(d)}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-text-muted text-sm">Scope items not extracted.</p>
-              )}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* SECTION 5 — EVALUATION CRITERIA */}
-            <section id="section-evaluation">
-              <SectionHeader number="05" title="Evaluation Criteria" />
-
-              {resolvedEvalRows.length > 0 ? (
-                <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr style={{ background: '#08111F', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                          {['Stage', 'Criterion', 'Sub-Criterion', 'Parameters', 'Marks', 'Max Marks'].map(h => (
-                            <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-text-muted font-semibold">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {resolvedEvalRows.map((row, i) => (
-                          <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)' }}>
-                            <td className="px-4 py-3 text-text-muted whitespace-nowrap">{row.stage}</td>
-                            <td className="px-4 py-3 text-text-secondary">{row.criterion}</td>
-                            <td className="px-4 py-3 text-text-muted">{row.subCriterion}</td>
-                            <td className="px-4 py-3 text-text-secondary">{row.marks}</td>
-                            <td className="px-4 py-3 text-center font-mono" style={{ color: '#00E5FF' }}>{row.marks}</td>
-                            <td className="px-4 py-3 text-center font-mono text-text-muted">{row.maxMarks}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : null}
-
-              {evalMethod && (
-                <div className="rounded-xl p-4 mb-4" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.15)' }}>
-                  <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Evaluation Method</div>
-                  <div className="text-text-primary font-medium text-sm">{evalMethod}</div>
-                </div>
-              )}
-
-              {evalWeights.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-                  {evalWeights.map((w, i) => (
-                    <div key={i} className="rounded-xl p-3" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">{safeStr(w.criterion || w.category, `Criterion ${i + 1}`)}</div>
-                      <div className="font-semibold text-sm" style={{ color: '#00E5FF' }}>{safeStr(w.weight || w.score, '—')}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {evalTechnical.length > 0 && (
-                <div className="mb-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Technical Criteria</div>
-                  <div className="space-y-2">
-                    {evalTechnical.map((c, i) => (
-                      <div key={i} className="flex gap-3 rounded-xl p-3" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-neon-cyan" />
-                        <p className="text-text-secondary text-sm">{safeStr(c)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {evalFinancial.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Financial Criteria</div>
-                  <div className="space-y-2">
-                    {evalFinancial.map((c, i) => (
-                      <div key={i} className="flex gap-3 rounded-xl p-3" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#FFD166' }} />
-                        <p className="text-text-secondary text-sm">{safeStr(c)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {resolvedEvalRows.length === 0 && !evalMethod && evalTechnical.length === 0 && evalFinancial.length === 0 && (
-                <p className="text-text-muted text-sm">Evaluation criteria not extracted.</p>
-              )}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* SECTION 6 — RISK RADAR */}
-            <section id="section-risk">
-              <SectionHeader number="06" title="Risk Radar" />
-              {resolvedRedFlags.length > 0 ? (
-                <div className="space-y-3">
-                  {resolvedRedFlags.map((r, i) => (
-                    <div key={i} className="rounded-xl p-4" style={{ background: 'rgba(255,77,109,0.04)', border: '1px solid rgba(255,77,109,0.15)' }}>
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#FF4D6D' }} />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-semibold text-text-primary">{safeStr(r.text)}</span>
-                            <RiskBadge level={safeStr(r.level, 'Medium')} />
-                          </div>
-                          {r.detail && <p className="text-text-muted text-xs leading-relaxed mt-1">{r.detail}</p>}
-                          {r.action && <p className="text-xs mt-2 font-medium" style={{ color: '#FFB020' }}>Action: {r.action}</p>}
-                        </div>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider flex-shrink-0" style={{ color: '#FF4D6D' }}>{r.cat}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-text-muted text-sm">No red flags identified.</p>
-              )}
-
-              {legalRisksArray.length > 0 && (
-                <div className="mt-5">
-                  <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Legal & Commercial Risks</div>
-                  <div className="space-y-3">
-                    {legalRisksArray.map((r, i) => (
-                      <div key={i} className="rounded-xl p-4" style={{ background: 'rgba(255,176,32,0.04)', border: '1px solid rgba(255,176,32,0.15)' }}>
-                        <div className="font-semibold text-sm text-text-primary mb-1">{safeStr(r.risk)}</div>
-                        {r.detail && <p className="text-text-muted text-xs leading-relaxed">{safeStr(r.detail)}</p>}
-                        {r.impact && <p className="text-xs mt-1.5 font-medium" style={{ color: '#FFB020' }}>Impact: {safeStr(r.impact)}</p>}
-                        {r.suggested_clarification && <p className="text-xs mt-1 text-text-muted">Ask: {safeStr(r.suggested_clarification)}</p>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* SECTION 7 — CLARIFICATION QUESTIONS */}
-            <section id="section-questions">
-              <SectionHeader number="07" title="Clarification Questions" />
-              {resolvedClarificationQs.length > 0 ? (
-                <div className="space-y-3">
-                  {resolvedClarificationQs.map((q, i) => {
-                    const question = safeStr(q.question || q.text, String(q));
-                    const reason = safeStr(q.why_critical || q.reason_for_asking, '');
-                    const section = safeStr(q.section_reference || q.rfp_section_or_context, '');
-                    const priority = safeStr(q.priority, '');
-                    const priorityColor = priority === 'High' ? '#FF4D6D' : priority === 'Medium' ? '#FFB020' : '#9CAEC4';
+                  {snapFields.map(f => {
+                    const val = safeStr(snap[f.key], '');
                     return (
-                      <div key={i} className="flex gap-4 rounded-xl p-4" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 font-mono text-xs font-bold" style={{ background: 'rgba(0,229,255,0.08)', color: '#00E5FF' }}>
-                          {String(i + 1).padStart(2, '0')}
+                      <div key={f.key} className="rounded-xl p-4"
+                        style={{
+                          background: f.highlight ? 'rgba(255,176,32,0.06)' : '#08111F',
+                          border: f.highlight ? '1px solid rgba(255,176,32,0.3)' : '1px solid rgba(255,255,255,0.06)',
+                        }}>
+                        <div className="text-[10px] uppercase tracking-wider mb-1.5"
+                          style={{ color: f.highlight ? '#FFB020' : '#9CAEC4' }}>{f.label}</div>
+                        <div className="font-bold text-sm leading-snug"
+                          style={{ color: f.highlight ? '#FFD166' : val ? '#F5F9FF' : '#4A5568' }}>
+                          {val || 'Not specified'}
                         </div>
-                        <div className="flex-1">
-                          <p className="text-text-secondary text-sm leading-relaxed">{question}</p>
-                          {section && <p className="text-[10px] text-text-muted mt-1">Section: {section}</p>}
-                          {reason && <p className="text-text-muted text-xs mt-1.5">{reason}</p>}
-                        </div>
-                        {priority && (
-                          <div className="flex-shrink-0">
-                            <span className="text-[10px] font-semibold uppercase" style={{ color: priorityColor }}>{priority}</span>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
                 </div>
-              ) : (
-                <p className="text-text-muted text-sm">No clarification questions generated.</p>
-              )}
+              ) : <EmptyState />}
             </section>
 
             <div className="section-divider" />
 
-            {/* SECTION 8 — PROPOSAL STRATEGY */}
-            <section id="section-strategy">
-              <SectionHeader number="08" title="Proposal Strategy" />
-              {positioning && (
-                <div className="rounded-2xl p-6 mb-5" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.2)' }}>
-                  <div className="text-xs text-neon-cyan uppercase tracking-wider mb-3">Recommended Positioning</div>
-                  <p className="text-text-secondary leading-relaxed">{positioning}</p>
-                </div>
-              )}
-              {resolvedWinThemes.length > 0 && (
-                <div className="space-y-3 mb-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider mb-2 text-text-muted">Win Themes</div>
-                  {resolvedWinThemes.map((w, i) => (
-                    <div key={i} className="rounded-xl p-4" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div className="font-semibold text-sm text-text-primary mb-1">{safeStr(w.theme || String(w))}</div>
-                      {w.rationale && <p className="text-text-muted text-xs leading-relaxed">{safeStr(w.rationale)}</p>}
-                      {w.proof_points && <p className="text-xs mt-1.5 text-text-secondary">{safeStr(w.proof_points)}</p>}
+            {/* ══ 02. SCOPE OF WORK ═════════════════════════════════════════ */}
+            <section id="section-scope">
+              <SectionHeader number="02" title="Scope of Work" />
+              {scopeArr.length > 0 ? (
+                <div className="space-y-5">
+                  {scopeArr.map((ws, i) => (
+                    <div key={i} className="rounded-2xl p-6"
+                      style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
+                      {/* Title */}
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center font-mono font-bold text-xs flex-shrink-0"
+                          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
+                          {String(i + 1).padStart(2, '0')}
+                        </div>
+                        <h3 className="font-semibold text-base text-text-primary">{safeStr(ws.workstream, 'Workstream')}</h3>
+                      </div>
+
+                      {/* What bank wants */}
+                      <div className="mb-4">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#00E5FF' }}>What the Bank Wants</div>
+                        <p className="text-text-secondary text-sm leading-relaxed">{safeStr(ws.what_bank_wants)}</p>
+                      </div>
+
+                      {/* Deliverables */}
+                      {safeArr<string>(ws.deliverables).length > 0 && (
+                        <div className="mb-4">
+                          <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-text-muted">Key Deliverables</div>
+                          <ul className="space-y-1.5">
+                            {safeArr<string>(ws.deliverables).map((d, j) => (
+                              <li key={j} className="flex items-start gap-2 text-sm text-text-secondary">
+                                <span style={{ color: '#00E5FF' }} className="mt-1 flex-shrink-0">•</span>
+                                {safeStr(d)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Timeline */}
+                      <div className="flex items-center gap-2 text-xs mb-3">
+                        <span className="text-text-muted uppercase tracking-wider">Timeline:</span>
+                        <span className="font-medium" style={{ color: safeStr(ws.timeline, '') && ws.timeline !== 'Not specified' ? '#FFD166' : '#4A5568' }}>
+                          {safeStr(ws.timeline, 'Not specified')}
+                        </span>
+                      </div>
+
+                      {/* EY implication */}
+                      <div className="rounded-lg px-4 py-2.5" style={{ background: 'rgba(255,209,102,0.04)', border: '1px solid rgba(255,209,102,0.1)' }}>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider mr-2" style={{ color: '#FFD166' }}>What This Means for EY:</span>
+                        <span className="text-xs text-text-muted italic">
+                          {(() => {
+                            const w = safeStr(ws.workstream).toLowerCase();
+                            const b = safeStr(ws.what_bank_wants).toLowerCase();
+                            if (w.includes('audit') || b.includes('audit')) return 'Requires dedicated audit capability and prior banking sector audit engagements.';
+                            if (w.includes('digital') || b.includes('digital')) return 'Digital transformation credentials and technology partner network will be critical differentiators.';
+                            if (w.includes('risk') || b.includes('risk')) return 'Enterprise risk management practice must lead this workstream with BFSI-specific risk frameworks.';
+                            if (w.includes('compliance') || b.includes('compliance') || w.includes('regul') || b.includes('regul')) return 'Regulatory compliance expertise and RBI/SEBI/IRDAI experience must be front and center.';
+                            if (w.includes('technology') || b.includes('technology') || w.includes('it ') || b.includes(' it ')) return 'Technology advisory team with core banking implementation experience is essential.';
+                            if (w.includes('strategy') || b.includes('strategy')) return 'Senior partner-led engagement with strategy practice; requires board-level banking relationships.';
+                            if (w.includes('hr') || b.includes('human resource') || b.includes('talent')) return 'People advisory practice with banking sector HR transformation track record needed.';
+                            return 'Cross-functional team required spanning advisory, technology, and domain-specific banking expertise.';
+                          })()}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
-              )}
-              {differentiators.length > 0 && (
-                <div className="rounded-xl p-5" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Differentiators to Highlight</div>
-                  {differentiators.map((d, i) => (
-                    <div key={i} className="flex gap-2 text-xs text-text-secondary mb-2.5">
-                      <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-neon-cyan" />
-                      {safeStr(d)}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {!positioning && resolvedWinThemes.length === 0 && differentiators.length === 0 && (
-                <p className="text-text-muted text-sm">Strategy recommendations not available.</p>
-              )}
+              ) : <EmptyState />}
             </section>
 
             <div className="section-divider" />
 
-            {/* SECTION 9 — NEXT ACTIONS */}
-            <section id="section-actions">
-              <SectionHeader number="09" title="Next Actions" />
-              {allNextActions.length > 0 ? (
-                <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div className="px-5 py-3 border-b text-xs text-text-muted" style={{ background: '#08111F', borderColor: 'rgba(255,255,255,0.06)' }}>
-                    Click any action to cycle status: Not Started → In Progress → Completed
+            {/* ══ 03. ELIGIBILITY & COMPLIANCE ══════════════════════════════ */}
+            <section id="section-eligibility">
+              <SectionHeader number="03" title="Eligibility & Compliance" />
+
+              {eligibilityArr.length > 0 ? (
+                <>
+                  {/* Summary bar */}
+                  <div className="grid grid-cols-4 gap-3 mb-6">
+                    {[
+                      { label: 'Total Criteria', value: totalCriteria, color: '#00E5FF' },
+                      { label: 'Mandatory',       value: mandatoryCount, color: '#FF4D6D' },
+                      { label: 'Can Meet',         value: canMeetCount,   color: '#00F5A0' },
+                      { label: 'At Risk',          value: atRiskCount,    color: '#FFB020' },
+                    ].map(stat => (
+                      <div key={stat.label} className="rounded-xl p-4 text-center"
+                        style={{ background: '#08111F', border: `1px solid rgba(${stat.color === '#00E5FF' ? '0,229,255' : stat.color === '#FF4D6D' ? '255,77,109' : stat.color === '#00F5A0' ? '0,245,160' : '255,176,32'},0.2)` }}>
+                        <div className="text-2xl font-bold font-mono mb-1" style={{ color: stat.color }}>{stat.value}</div>
+                        <div className="text-[10px] text-text-muted uppercase tracking-wider">{stat.label}</div>
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    {allNextActions.map((a, i) => {
-                      const status = actionStatus[i] || 'not-started';
-                      const isCompleted = status === 'completed';
-                      const isInProgress = status === 'in-progress';
+
+                  {/* Table */}
+                  <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr style={{ background: '#08111F', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            {['Criterion', 'Exact Requirement', 'Type', 'Evidence Required', 'EY Assessment'].map(h => (
+                              <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-text-muted font-semibold whitespace-nowrap">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {eligibilityArr.map((item, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)' }}>
+                              <td className="px-4 py-3 font-semibold text-text-primary align-top whitespace-nowrap">{safeStr(item.criterion)}</td>
+                              <td className="px-4 py-3 text-text-secondary align-top" style={{ minWidth: 220 }}>{safeStr(item.requirement)}</td>
+                              <td className="px-4 py-3 align-top whitespace-nowrap"><MandatoryBadge mandatory={item.mandatory !== false} /></td>
+                              <td className="px-4 py-3 text-text-muted align-top" style={{ minWidth: 180 }}>{safeStr(item.evidence_required)}</td>
+                              <td className="px-4 py-3 align-top whitespace-nowrap"><AssessmentBadge value={safeStr(item.ey_assessment, 'Pending Review')} /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              ) : <EmptyState />}
+            </section>
+
+            <div className="section-divider" />
+
+            {/* ══ 04. EVALUATION CRITERIA ═══════════════════════════════════ */}
+            <section id="section-evaluation">
+              <SectionHeader number="04" title="Evaluation Criteria" />
+
+              {evaluationArr.length > 0 ? (
+                <>
+                  {/* Totals bar */}
+                  <div className="flex flex-wrap gap-4 mb-6">
+                    {totalTechMarks > 0 && (
+                      <div className="rounded-xl px-5 py-3 flex items-center gap-3"
+                        style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.2)' }}>
+                        <span className="text-[10px] text-text-muted uppercase tracking-wider">Total Technical Marks</span>
+                        <span className="font-bold text-lg font-mono" style={{ color: '#00E5FF' }}>{totalTechMarks}</span>
+                      </div>
+                    )}
+                    {totalFinMarks > 0 && (
+                      <div className="rounded-xl px-5 py-3 flex items-center gap-3"
+                        style={{ background: 'rgba(255,209,102,0.06)', border: '1px solid rgba(255,209,102,0.2)' }}>
+                        <span className="text-[10px] text-text-muted uppercase tracking-wider">Total Financial Marks</span>
+                        <span className="font-bold text-lg font-mono" style={{ color: '#FFD166' }}>{totalFinMarks}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expanded cards */}
+                  <div className="space-y-4">
+                    {evaluationArr.map((item, i) => {
+                      const marks = Number(item.marks) || 0;
+                      const maxMarks = Number(item.max_marks) || 0;
+                      const pct = maxMarks > 0 ? Math.round((marks / maxMarks) * 100) : 0;
+                      const stageLower = safeStr(item.stage).toLowerCase();
+                      const stageColor = stageLower.includes('fin') ? '#FFD166' : '#00E5FF';
+                      const stageLabel = safeStr(item.stage, '—').toUpperCase();
+                      const proof = inferProofRequired(safeStr(item.criterion), safeStr(item.sub_criterion));
+
                       return (
-                        <div
-                          key={i}
-                          className="flex items-center gap-4 px-5 py-3.5 border-b cursor-pointer transition-all"
-                          style={{
-                            borderColor: 'rgba(255,255,255,0.04)',
-                            background: isCompleted ? 'rgba(0,245,160,0.03)' : isInProgress ? 'rgba(255,176,32,0.03)' : i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)'
-                          }}
-                          onClick={() => cycleActionStatus(i)}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = isCompleted ? 'rgba(0,245,160,0.03)' : isInProgress ? 'rgba(255,176,32,0.03)' : i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)'; }}
-                        >
-                          <div>
-                            {isCompleted ? (
-                              <CheckCircle className="w-4 h-4" style={{ color: '#00F5A0' }} />
-                            ) : isInProgress ? (
-                              <div className="w-4 h-4 rounded-full border-2 border-amber-400 flex items-center justify-center">
-                                <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        <div key={i} className="rounded-2xl p-6"
+                          style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          {/* Stage + type badges */}
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase"
+                              style={{ background: stageLower.includes('fin') ? 'rgba(255,209,102,0.1)' : 'rgba(0,229,255,0.1)', color: stageColor }}>
+                              {stageLabel}
+                            </span>
+                          </div>
+
+                          {/* Title */}
+                          <h3 className="font-semibold text-base text-text-primary mb-1">{safeStr(item.criterion, '—')}</h3>
+                          {item.sub_criterion && (
+                            <p className="text-text-muted text-sm mb-4">{safeStr(item.sub_criterion)}</p>
+                          )}
+
+                          {/* What is asked */}
+                          <div className="rounded-lg p-4 mb-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-text-muted">What is Asked</div>
+                            <p className="text-text-secondary text-sm leading-relaxed italic">
+                              "{safeStr(item.parameters, 'Refer to the RFP document for exact parameters.')}"
+                            </p>
+                          </div>
+
+                          {/* Proof required */}
+                          <div className="rounded-lg p-4 mb-4" style={{ background: 'rgba(0,229,255,0.03)', border: '1px solid rgba(0,229,255,0.1)' }}>
+                            <div className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#00E5FF' }}>Proof Required</div>
+                            <p className="text-text-muted text-sm">{proof}</p>
+                          </div>
+
+                          {/* Marks + progress bar */}
+                          {maxMarks > 0 && (
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs text-text-muted">Marks</span>
+                                <span className="text-sm font-bold font-mono" style={{ color: stageColor }}>
+                                  {marks} <span className="text-text-muted font-normal">/ {maxMarks}</span>
+                                </span>
                               </div>
-                            ) : (
-                              <Circle className="w-4 h-4" style={{ color: '#00E5FF' }} />
-                            )}
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-sm text-text-primary">{safeStr(a.task)}</div>
-                          </div>
-                          <div className="text-[10px] uppercase tracking-wider text-text-muted">{a.when}</div>
-                          <div className="text-[10px] uppercase tracking-wider w-20 text-right" style={{ color: isCompleted ? '#00F5A0' : isInProgress ? '#FFB020' : '#00E5FF' }}>
-                            {isCompleted ? 'Completed' : isInProgress ? 'In Progress' : 'Not Started'}
-                          </div>
+                              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: stageColor }} />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
+                </>
+              ) : <EmptyState />}
+            </section>
+
+            <div className="section-divider" />
+
+            {/* ══ 05. RISK RADAR ════════════════════════════════════════════ */}
+            <section id="section-risk">
+              <SectionHeader number="05" title="Risk Radar" />
+
+              {sortedRedFlags.length > 0 || legalRisksArr.length > 0 ? (
+                <>
+                  {sortedRedFlags.length > 0 && (
+                    <div className="space-y-3 mb-6">
+                      {sortedRedFlags.map((r, i) => {
+                        const level = safeStr(r.risk_level, 'Medium').toLowerCase();
+                        const borderColor = level === 'high' ? '#FF4D6D' : level === 'medium' ? '#FFB020' : '#FFD166';
+                        const bgColor = level === 'high' ? 'rgba(255,77,109,0.04)' : level === 'medium' ? 'rgba(255,176,32,0.04)' : 'rgba(255,209,102,0.03)';
+                        return (
+                          <div key={i} className="rounded-xl p-5"
+                            style={{ background: bgColor, borderLeft: `3px solid ${borderColor}`, border: `1px solid rgba(255,255,255,0.06)`, borderLeftWidth: 3, borderLeftColor: borderColor }}>
+                            <div className="flex items-start justify-between gap-4 mb-2">
+                              <h3 className="font-semibold text-sm text-text-primary flex-1">{safeStr(r.flag)}</h3>
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase flex-shrink-0"
+                                style={{ background: `${bgColor}`, border: `1px solid ${borderColor}`, color: borderColor }}>
+                                {safeStr(r.risk_level, 'Medium')} Risk
+                              </span>
+                            </div>
+                            {r.detail && (
+                              <div className="mb-2">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">What: </span>
+                                <span className="text-text-muted text-xs">{safeStr(r.detail)}</span>
+                              </div>
+                            )}
+                            {r.recommended_action && (
+                              <div className="mt-2 flex items-start gap-1.5">
+                                <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: borderColor }} />
+                                <span className="text-xs font-medium" style={{ color: borderColor }}>Action: {safeStr(r.recommended_action)}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {legalRisksArr.length > 0 && (
+                    <>
+                      <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Legal & Commercial Risks</div>
+                      <div className="space-y-3">
+                        {legalRisksArr.map((r, i) => (
+                          <div key={i} className="rounded-xl p-5"
+                            style={{ background: 'rgba(255,176,32,0.04)', borderLeft: '3px solid #FFB020', border: '1px solid rgba(255,176,32,0.15)', borderLeftWidth: 3, borderLeftColor: '#FFB020' }}>
+                            <h3 className="font-semibold text-sm text-text-primary mb-2">{safeStr(r.risk)}</h3>
+                            {r.detail && <p className="text-text-muted text-xs mb-2">{safeStr(r.detail)}</p>}
+                            {r.impact && <p className="text-xs mb-2"><span className="font-semibold" style={{ color: '#FFB020' }}>Impact: </span><span className="text-text-muted">{safeStr(r.impact)}</span></p>}
+                            {r.suggested_clarification && <p className="text-xs text-text-muted italic">Ask: {safeStr(r.suggested_clarification)}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : <EmptyState />}
+            </section>
+
+            <div className="section-divider" />
+
+            {/* ══ 06. CLARIFICATION QUESTIONS ═══════════════════════════════ */}
+            <section id="section-questions">
+              <SectionHeader number="06" title="Clarification Questions" />
+              {sortedClarQs.length > 0 ? (
+                <div className="space-y-3">
+                  {sortedClarQs.map((q, i) => (
+                    <div key={i} className="rounded-xl p-5"
+                      style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 font-mono text-xs font-bold"
+                          style={{ background: 'rgba(0,229,255,0.08)', color: '#00E5FF' }}>
+                          {String(i + 1).padStart(2, '0')}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <p className="font-semibold text-sm text-text-primary leading-snug">{safeStr(q.question)}</p>
+                            {q.priority && <PriorityBadge priority={safeStr(q.priority)} />}
+                          </div>
+                          {q.section_reference && (
+                            <p className="text-[10px] text-text-muted mb-1">Section: {safeStr(q.section_reference)}</p>
+                          )}
+                          {q.why_critical && (
+                            <p className="text-xs text-text-muted italic">{safeStr(q.why_critical)}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <p className="text-text-muted text-sm">No next actions generated.</p>
-              )}
+              ) : <EmptyState />}
+            </section>
+
+            <div className="section-divider" />
+
+            {/* ══ 07. PROPOSAL STRATEGY ═════════════════════════════════════ */}
+            <section id="section-strategy">
+              <SectionHeader number="07" title="Proposal Strategy" />
+              {winThemesArr.length > 0 ? (
+                <div className="space-y-4">
+                  {winThemesArr.map((w, i) => (
+                    <div key={i} className="rounded-2xl p-6"
+                      style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: '#00E5FF' }} />
+                        <h3 className="font-bold text-base text-text-primary">{safeStr(w.theme, `Win Theme ${i + 1}`)}</h3>
+                      </div>
+                      {w.rationale && (
+                        <p className="text-text-secondary text-sm leading-relaxed mb-3">{safeStr(w.rationale)}</p>
+                      )}
+                      {w.proof_points && (
+                        <div className="rounded-lg px-4 py-3" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)' }}>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#00E5FF' }}>Proof Points</div>
+                          <p className="text-text-muted text-xs italic">{safeStr(w.proof_points)}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyState />}
+            </section>
+
+            <div className="section-divider" />
+
+            {/* ══ 08. NEXT ACTIONS ══════════════════════════════════════════ */}
+            <section id="section-actions">
+              <SectionHeader number="08" title="Next Actions" />
+              {(next24h.length + next3d.length + nextPreBid.length + nextSubmission.length) > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { label: 'Within 24 Hours', items: next24h,        color: '#FF4D6D', bg: 'rgba(255,77,109,0.06)',   border: 'rgba(255,77,109,0.2)' },
+                    { label: 'Within 3 Days',   items: next3d,         color: '#FFB020', bg: 'rgba(255,176,32,0.06)',   border: 'rgba(255,176,32,0.2)' },
+                    { label: 'Before Pre-Bid',  items: nextPreBid,     color: '#00E5FF', bg: 'rgba(0,229,255,0.06)',    border: 'rgba(0,229,255,0.2)' },
+                    { label: 'Before Submission',items: nextSubmission, color: '#00F5A0', bg: 'rgba(0,245,160,0.06)',   border: 'rgba(0,245,160,0.2)' },
+                  ].map(col => (
+                    <div key={col.label} className="rounded-xl overflow-hidden"
+                      style={{ border: `1px solid ${col.border}` }}>
+                      <div className="px-4 py-3 text-xs font-bold uppercase tracking-wider"
+                        style={{ background: col.bg, color: col.color }}>{col.label}</div>
+                      <div className="p-3 space-y-2" style={{ background: '#08111F' }}>
+                        {col.items.length > 0 ? col.items.map((task, j) => {
+                          const key = `${col.label}-${j}`;
+                          const done = actionStatus[key] || false;
+                          return (
+                            <button key={j}
+                              className="w-full flex items-start gap-2 text-left text-xs text-text-secondary transition-opacity hover:text-text-primary"
+                              onClick={() => setActionStatus(prev => ({ ...prev, [key]: !prev[key] }))}>
+                              {done
+                                ? <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#00F5A0' }} />
+                                : <Circle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: col.color }} />}
+                              <span style={{ textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.5 : 1 }}>
+                                {safeStr(task)}
+                              </span>
+                            </button>
+                          );
+                        }) : (
+                          <p className="text-text-muted text-xs py-2">No actions specified.</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyState />}
+            </section>
+
+            <div className="section-divider" />
+
+            {/* ══ 09. DECISION SUMMARY (LAST) ═══════════════════════════════ */}
+            <section id="section-decision">
+              <SectionHeader number="09" title="Decision Summary" />
+              <div className="grid md:grid-cols-5 gap-6">
+
+                {/* Left 60% */}
+                <div className="md:col-span-3 space-y-5">
+                  <GoNoGoBadge value={recommendation} />
+
+                  {oneLiner && (
+                    <p className="text-text-muted text-sm italic border-l-2 pl-4" style={{ borderColor: '#00E5FF' }}>{oneLiner}</p>
+                  )}
+
+                  {goNoGoReasoning && (
+                    <div className="rounded-2xl p-5" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Our Recommendation</div>
+                      <div className="space-y-2">
+                        {goNoGoReasoning.split(/\n|(?<=\.)(?=\s[A-Z])/).filter(Boolean).map((line, i) => (
+                          <div key={i} className="flex items-start gap-2.5 text-sm text-text-secondary">
+                            <span className="font-mono text-[10px] mt-1 opacity-40 flex-shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                            {line.trim()}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {topRisks.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-text-muted">Top Risks</div>
+                      {topRisks.map((risk, i) => (
+                        <div key={i} className="flex items-start gap-3 rounded-xl p-3"
+                          style={{ background: 'rgba(255,77,109,0.04)', border: '1px solid rgba(255,77,109,0.15)' }}>
+                          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#FF4D6D' }} />
+                          <p className="text-text-secondary text-sm">{safeStr(risk)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(strategicFit !== 'Not specified' || bidComplexity !== 'Not specified') && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl p-4" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2">Strategic Fit</div>
+                        <ComplexityDot level={strategicFit.split('—')[0].trim()} />
+                        {strategicFit.includes('—') && (
+                          <p className="text-[10px] text-text-muted mt-1">{strategicFit.split('—').slice(1).join('—').trim()}</p>
+                        )}
+                      </div>
+                      <div className="rounded-xl p-4" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2">Bid Complexity</div>
+                        <ComplexityDot level={bidComplexity.split('—')[0].trim()} />
+                        {bidComplexity.includes('—') && (
+                          <p className="text-[10px] text-text-muted mt-1">{bidComplexity.split('—').slice(1).join('—').trim()}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right 40% — sticky action card */}
+                <div className="md:col-span-2 space-y-4">
+                  <div className="rounded-2xl p-5 sticky top-20"
+                    style={{ background: '#08111F', border: '1px solid rgba(255,209,102,0.2)' }}>
+                    <div className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: '#FFD166' }}>Immediate Actions Required</div>
+                    <div className="space-y-3">
+                      {immediateActions.length > 0 ? immediateActions.map((action, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5"
+                            style={{ background: 'rgba(255,209,102,0.15)', color: '#FFD166' }}>
+                            {i + 1}
+                          </span>
+                          <p className="text-text-secondary text-sm leading-relaxed">{safeStr(action)}</p>
+                        </div>
+                      )) : (
+                        <p className="text-text-muted text-xs">No immediate actions specified.</p>
+                      )}
+                    </div>
+                    <div className="mt-6 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <p className="text-[10px] text-text-muted leading-relaxed italic">
+                        This intelligence brief was prepared by ProposalPilot BFSI. Analysis based on the submitted document content.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </section>
 
           </div>
         </div>
 
-        {/* Right sticky panel */}
-        <div className="w-64 flex-shrink-0 sticky top-14 h-[calc(100vh-56px)] overflow-y-auto p-5 space-y-4" style={{ background: '#08111F', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
+        {/* ── Right sidebar ─────────────────────────────────────────────────── */}
+        <div className="w-56 flex-shrink-0 sticky top-14 h-[calc(100vh-56px)] overflow-y-auto p-4 space-y-4"
+          style={{ background: '#08111F', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
           <div>
-            <div className="text-[10px] text-text-muted uppercase tracking-widest mb-3">Overall Recommendation</div>
-            <div className="px-4 py-3 rounded-xl text-center font-serif font-bold" style={{ background: 'rgba(255,209,102,0.08)', border: '1px solid rgba(255,209,102,0.25)', color: '#FFD166' }}>
+            <div className="text-[10px] text-text-muted uppercase tracking-widest mb-2">Recommendation</div>
+            <div className="px-3 py-2.5 rounded-xl text-center font-serif font-bold text-sm"
+              style={{ background: 'rgba(255,209,102,0.08)', border: '1px solid rgba(255,209,102,0.25)', color: '#FFD166' }}>
               {recommendation}
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {confidenceScore !== null && (
               <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-                <span className="text-xs text-text-muted">Confidence Score</span>
+                <span className="text-xs text-text-muted">Confidence</span>
                 <span className="text-xs font-semibold" style={{ color: '#00E5FF' }}>{confidenceScore}%</span>
-              </div>
-            )}
-            {analysis?.status && (
-              <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-                <span className="text-xs text-text-muted">Analysis Status</span>
-                <span className="text-xs font-semibold" style={{ color: analysis.status === 'completed' ? '#00F5A0' : '#FFB020' }}>{analysis.status}</span>
               </div>
             )}
             {snap.submission_deadline && (
               <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-                <span className="text-xs text-text-muted">Submission Deadline</span>
+                <span className="text-xs text-text-muted">Deadline</span>
                 <span className="text-xs font-bold" style={{ color: '#FFB020' }}>{safeStr(snap.submission_deadline)}</span>
               </div>
             )}
-            {resolvedRedFlags.length > 0 && (
+            {sortedRedFlags.length > 0 && (
               <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
                 <span className="text-xs text-text-muted">Red Flags</span>
-                <span className="text-xs font-semibold" style={{ color: '#FF4D6D' }}>{resolvedRedFlags.length}</span>
+                <span className="text-xs font-semibold" style={{ color: '#FF4D6D' }}>{sortedRedFlags.length}</span>
               </div>
             )}
-            {resolvedClarificationQs.length > 0 && (
+            {sortedClarQs.length > 0 && (
+              <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                <span className="text-xs text-text-muted">Questions</span>
+                <span className="text-xs font-semibold text-text-muted">{sortedClarQs.length}</span>
+              </div>
+            )}
+            {eligibilityArr.length > 0 && (
               <div className="flex items-center justify-between py-2">
-                <span className="text-xs text-text-muted">Clarification Qs</span>
-                <span className="text-xs font-semibold" style={{ color: '#9CAEC4' }}>{resolvedClarificationQs.length}</span>
+                <span className="text-xs text-text-muted">Elig. Criteria</span>
+                <span className="text-xs font-semibold text-text-muted">{eligibilityArr.length}</span>
               </div>
             )}
           </div>
 
-          <div className="space-y-2 pt-2">
-            <button
-              onClick={() => onNavigate('export')}
+          <div className="space-y-2 pt-1">
+            <button onClick={() => onNavigate('export')}
               className="w-full py-2.5 rounded-lg text-xs font-semibold text-background flex items-center justify-center gap-1.5 transition-all hover:scale-105"
-              style={{ background: 'linear-gradient(135deg, #FFD166, #FFB020)', boxShadow: '0 0 20px rgba(255,209,102,0.15)' }}
-            >
-              <Download className="w-3.5 h-3.5" />
-              Download PDF
+              style={{ background: 'linear-gradient(135deg, #FFD166, #FFB020)' }}>
+              <Download className="w-3.5 h-3.5" /> PDF
             </button>
-            <button
-              onClick={() => onNavigate('export')}
+            <button onClick={() => onNavigate('export')}
               className="w-full py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all hover:scale-105"
-              style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)', color: '#00E5FF' }}
-            >
-              <FileDown className="w-3.5 h-3.5" />
-              Download Word
+              style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)', color: '#00E5FF' }}>
+              <FileDown className="w-3.5 h-3.5" /> Word
             </button>
           </div>
         </div>
