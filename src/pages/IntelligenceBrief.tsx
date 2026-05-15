@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Download, FileDown, ArrowLeft, CheckCircle, Circle, AlertTriangle, ChevronRight, Loader2, AlertCircle, Mail } from 'lucide-react';
+import { Download, FileDown, ArrowLeft, CheckCircle, Circle, AlertTriangle, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import type { RfpProject } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import EmailModal from '@/components/EmailModal';
 
 interface IntelligenceBriefProps {
   onNavigate: (page: string) => void;
@@ -146,17 +145,9 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState('snapshot');
   const [actionStatus, setActionStatus] = useState<Record<string, boolean>>({});
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [userEmail, setUserEmail] = useState('');
   const contentRef = useRef<HTMLDivElement>(null);
 
   const projectId = project?.id || localStorage.getItem('lastProjectId');
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data?.user?.email) setUserEmail(data.user.email);
-    });
-  }, []);
 
   useEffect(() => {
     if (!projectId) { setFetchError('No project selected.'); setLoading(false); return; }
@@ -304,7 +295,6 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
   ];
 
   return (
-    <>
     <div className="min-h-screen bg-background flex flex-col">
       {/* ── Top header ────────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-30 px-6 py-3 flex items-center justify-between border-b backdrop-blur-md"
@@ -325,11 +315,6 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowEmailModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-105"
-            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)', color: '#00E5FF' }}>
-            <Mail className="w-3.5 h-3.5" /> Email Brief
-          </button>
           <button onClick={() => onNavigate('export')}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-background transition-all hover:scale-105"
             style={{ background: 'linear-gradient(135deg, #FFD166, #FFB020)', boxShadow: '0 0 20px rgba(255,209,102,0.2)' }}>
@@ -929,14 +914,5 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
         </div>
       </div>
     </div>
-
-    {showEmailModal && project?.id && (
-      <EmailModal
-        projectId={project.id}
-        userEmail={userEmail}
-        onClose={() => setShowEmailModal(false)}
-      />
-    )}
-    </>
   );
 }
