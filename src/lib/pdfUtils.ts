@@ -18,7 +18,12 @@ export async function extractTextFromPdf(file: File): Promise<string> {
       fullText += pageText + '\n';
     }
 
-    return fullText.trim();
+    const text = fullText.trim();
+    const MAX_CHARS = 12000;
+    if (text.length > MAX_CHARS) {
+      return text.slice(0, MAX_CHARS) + '\n\n[Document truncated for analysis. First 12,000 characters analyzed.]';
+    }
+    return text;
   } catch (err) {
     throw new Error(`PDF extraction failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }

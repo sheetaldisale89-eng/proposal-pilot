@@ -23,6 +23,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const truncatedText = rfpText.length > 12000
+      ? rfpText.slice(0, 12000) + '\n\n[Truncated]'
+      : rfpText;
+
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) {
       return new Response(
@@ -38,11 +42,11 @@ Deno.serve(async (req: Request) => {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4-turbo",
+        model: "gpt-4o-mini",
         max_tokens: 4000,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: `Analyze this BFSI RFP:\n\n${rfpText}` },
+          { role: "user", content: `Analyze this BFSI RFP:\n\n${truncatedText}` },
         ],
       }),
     });
