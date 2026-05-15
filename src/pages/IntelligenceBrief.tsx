@@ -353,11 +353,6 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
         <div ref={contentRef} className="flex-1 overflow-auto">
           <div className="max-w-4xl mx-auto px-8 py-10 space-y-16">
 
-            {/* DEBUG: available top-level keys */}
-            <pre style={{ color: 'lime', fontSize: 10, background: '#000', padding: 8, overflow: 'auto', maxHeight: 200 }}>
-              {JSON.stringify(Object.keys(analysis?.full_analysis_json || {}), null, 2)}
-            </pre>
-
             {/* ══ 01. RFP SNAPSHOT ══════════════════════════════════════════ */}
             <section id="section-snapshot">
               <SectionHeader number="01" title="RFP Snapshot" />
