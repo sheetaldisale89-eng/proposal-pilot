@@ -23,8 +23,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const truncatedText = rfpText.length > 12000
-      ? rfpText.slice(0, 12000) + '\n\n[Truncated]'
+    const truncatedText = rfpText.length > 24000
+      ? rfpText.slice(0, 24000) + '\n\n[Truncated]'
       : rfpText;
 
     const apiKey = Deno.env.get("OPENAI_API_KEY");
