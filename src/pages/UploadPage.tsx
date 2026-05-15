@@ -89,7 +89,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
       original_file_name: file.name,
       file_type: 'application/pdf',
       file_size_bytes: file.size,
-      status: 'extracting',
+      status: 'uploaded',
     }).select().single();
 
     if (fileRowError) throw fileRowError;
