@@ -1,0 +1,413 @@
+import { useState, useRef } from 'react';
+import { Upload, File, CheckCircle, X, FileText, Calendar, Users, DollarSign, Layers, Award, ClipboardList, Scale, AlertCircle } from 'lucide-react';
+import Sidebar from '../components/Sidebar';
+import { supabase } from '@/lib/supabase';
+import { useProjects } from '@/hooks/useProjects';
+
+interface UploadPageProps {
+  onNavigate: (page: string) => void;
+  onFileUploaded: (info: { name: string; size: string; storagePath: string; projectId: string }) => void;
+}
+
+const infoCards = [
+  { icon: <FileText className="w-4 h-4" />, label: 'Issuing Institution', desc: 'Bank, insurer, or financial entity' },
+  { icon: <Layers className="w-4 h-4" />, label: 'BFSI Segment', desc: 'Banking, insurance, payments, capital markets' },
+  { icon: <File className="w-4 h-4" />, label: 'RFP Title', desc: 'Full document title and reference' },
+  { icon: <Calendar className="w-4 h-4" />, label: 'Submission Deadline', desc: 'Date and time of bid submission' },
+  { icon: <Users className="w-4 h-4" />, label: 'Eligibility Criteria', desc: 'Mandatory qualification requirements' },
+  { icon: <ClipboardList className="w-4 h-4" />, label: 'Scope and Deliverables', desc: 'Work packages and output expectations' },
+  { icon: <DollarSign className="w-4 h-4" />, label: 'Commercial Terms', desc: 'Payment, penalties, and pricing model' },
+  { icon: <Award className="w-4 h-4" />, label: 'Evaluation Criteria', desc: 'Scoring methodology and weightages' },
+];
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export default function UploadPage({ onNavigate, onFileUploaded }: UploadPageProps) {
+  const { createProject } = useProjects();
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<{ name: string; size: string; storagePath: string; projectId: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+  if (!file.type.includes('pdf')) {
+    setError('Only PDF files are accepted.');
+    return;
+  }
+  if (file.size > 50 * 1024 * 1024) {
+    setError('File exceeds the 50 MB limit.');
+    return;
+  }
+  setError(null);
+  setUploading(true);
+  setUploadProgress(10);
+
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    // Create a draft project
+    const project = await createProject({
+      title: file.name.replace('.pdf', '').replace(/_/g, ' '),
+      client_name: '',
+      institution_type: 'Banking',
+      rfp_category: '',
+      description: '',
+      due_date: null,
+    });
+
+    setUploadProgress(30);
+
+    // Upload PDF to Supabase Storage
+    const storagePath = `${user.id}/${project.id}/${file.name}`;
+    const { error: storageError } = await supabase.storage
+      .from('rfp-files')
+      .upload(storagePath, file, { upsert: false, contentType: 'application/pdf' });
+
+    if (storageError) throw storageError;
+    setUploadProgress(40);
+
+    // Create rfp_files row
+    const { data: rfpFileData, error: fileRowError } = await supabase.from('rfp_files').insert({
+      project_id: project.id,
+      uploaded_by: user.id,
+      bucket_name: 'rfp-files',
+      storage_path: storagePath,
+      original_file_name: file.name,
+      file_type: 'application/pdf',
+      file_size_bytes: file.size,
+      status: 'extracting',
+    }).select().single();
+
+    if (fileRowError) throw fileRowError;
+    setUploadProgress(50);
+
+    // Extract text from PDF
+    const { extractTextFromPdf } = await import('@/lib/pdfUtils');
+    const rfpText = await extractTextFromPdf(storagePath);
+    if (!rfpText || rfpText.length < 200) {
+      throw new Error('PDF extraction failed or text too short (< 200 words)');
+    }
+    setUploadProgress(60);
+
+    // Create ai_analysis_results row (initial status: queued)
+    const { data: analysisRecord, error: analysisCreateError } = await supabase
+      .from('ai_analysis_results')
+      .insert({
+        project_id: project.id,
+        rfp_file_id: rfpFileData.id,
+        created_by: user.id,
+        status: 'queued',
+        model_provider: 'openai',
+        model_name: 'gpt-4-turbo',
+        started_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (analysisCreateError) throw analysisCreateError;
+    setUploadProgress(65);
+
+    // Call OpenAI LLM
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+    if (!apiKey) throw new Error('OpenAI API key not configured');
+
+    const analysisResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4-turbo',
+        max_tokens: 4000,
+        messages: [
+          {
+            role: 'system',
+            content: `You are ProposalPilot BFSI, an expert AI Bid Desk Analyst. Analyze the BFSI RFP and output EXACTLY in this format:
+
+PART 1: Valid JSON with these fields (all required):
+{
+  "rfp_objective": "One-line summary of RFP goal",
+  "executive_summary": "2-3 paragraph executive brief",
+  "scope_summary": "Key scope items",
+  "eligibility_summary": "Key eligibility criteria",
+  "compliance_summary": "Key compliance requirements",
+  "commercial_summary": "Key commercial terms",
+  "technical_summary": "Key technical requirements",
+  "key_dates": [{"date": "YYYY-MM-DD", "event": "description"}],
+  "eligibility_criteria": ["criterion 1", "criterion 2"],
+  "scope_of_work": ["item 1", "item 2"],
+  "compliance_matrix": [{"requirement": "description", "mandatory": true}],
+  "evaluation_criteria": [{"criterion": "description", "weightage": "percentage"}],
+  "required_documents": ["doc 1", "doc 2"],
+  "risks_and_red_flags": [{"risk": "description", "severity": "high|medium|low"}],
+  "clarification_questions": [{"question": "text", "priority": "high|medium|low"}],
+  "win_themes": ["theme 1", "theme 2"],
+  "recommended_actions": ["action 1", "action 2"],
+  "confidence_score": 85.5
+}
+
+PART 2: Full analysis JSON (same as above, but comprehensive).
+
+Output JSON first, then markdown. Do NOT add preamble or markdown backticks.`,
+          },
+          { role: 'user', content: `Analyze this BFSI RFP:\n\n${rfpText}` },
+        ],
+      }),
+    });
+
+    if (!analysisResponse.ok) {
+      const errBody = await analysisResponse.json();
+      throw new Error(errBody.error?.message || `API error ${analysisResponse.status}`);
+    }
+
+    const analysisData = await analysisResponse.json() as { choices: Array<{ message: { content: string } }> };
+    const raw = analysisData.choices[0]?.message?.content ?? '';
+
+    // Parse JSON from response
+    const jsonStart = raw.indexOf('{');
+    if (jsonStart === -1) throw new Error('No JSON in API response');
+
+    let depth = 0;
+    let jsonEnd = -1;
+    for (let i = jsonStart; i < raw.length; i++) {
+      if (raw[i] === '{') depth++;
+      else if (raw[i] === '}') {
+        depth--;
+        if (depth === 0) { jsonEnd = i; break; }
+      }
+    }
+    if (jsonEnd === -1) throw new Error('Malformed JSON');
+
+    const jsonStr = raw.slice(jsonStart, jsonEnd + 1);
+    const analysisJson = JSON.parse(jsonStr);
+    setUploadProgress(80);
+
+    // Update ai_analysis_results row with parsed data
+    const { error: updateError } = await supabase
+      .from('ai_analysis_results')
+      .update({
+        status: 'completed',
+        executive_summary: analysisJson.executive_summary || null,
+        rfp_objective: analysisJson.rfp_objective || null,
+        scope_summary: analysisJson.scope_summary || null,
+        eligibility_summary: analysisJson.eligibility_summary || null,
+        compliance_summary: analysisJson.compliance_summary || null,
+        commercial_summary: analysisJson.commercial_summary || null,
+        technical_summary: analysisJson.technical_summary || null,
+        key_dates: analysisJson.key_dates || [],
+        eligibility_criteria: analysisJson.eligibility_criteria || [],
+        scope_of_work: analysisJson.scope_of_work || [],
+        compliance_matrix: analysisJson.compliance_matrix || [],
+        evaluation_criteria: analysisJson.evaluation_criteria || [],
+        required_documents: analysisJson.required_documents || [],
+        risks_and_red_flags: analysisJson.risks_and_red_flags || [],
+        clarification_questions: analysisJson.clarification_questions || [],
+        win_themes: analysisJson.win_themes || [],
+        recommended_actions: analysisJson.recommended_actions || [],
+        full_analysis_json: analysisJson,
+        confidence_score: analysisJson.confidence_score || 0,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', analysisRecord.id);
+
+    if (updateError) throw updateError;
+    setUploadProgress(100);
+
+    const info = { name: file.name, size: formatBytes(file.size), storagePath, projectId: project.id };
+    setUploadedFile(info);
+    onFileUploaded(info);
+
+    // Auto-navigate to processing/brief page after 1 second
+    setTimeout(() => {
+      onNavigate('processing'); // Shows loading animation
+    }, 1000);
+
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Upload/analysis failed. Please try again.');
+  } finally {
+    setUploading(false);
+  }
+};
+  
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  };
+
+  const handleReset = () => {
+    setUploadedFile(null);
+    setError(null);
+    setUploadProgress(0);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <Sidebar currentPage="upload" onNavigate={onNavigate} />
+
+      <div className="flex-1 overflow-auto">
+        <div className="px-8 py-5 border-b sticky top-0 z-10 backdrop-blur-md" style={{ borderColor: 'rgba(255,255,255,0.06)', background: 'rgba(3,7,18,0.9)' }}>
+          <h1 className="font-serif text-2xl font-bold text-text-primary">Upload RFP Document</h1>
+          <p className="text-text-muted text-sm mt-0.5">Upload a BFSI RFP PDF. ProposalPilot will identify the institution, key dates, scope, and eligibility criteria automatically.</p>
+        </div>
+
+        <div className="p-8 max-w-4xl mx-auto space-y-8">
+          {/* Upload Zone */}
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{
+              background: '#08111F',
+              border: `1px solid ${isDragging ? 'rgba(0,229,255,0.6)' : 'rgba(255,255,255,0.06)'}`,
+              boxShadow: isDragging ? '0 0 40px rgba(0,229,255,0.15)' : 'none',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <div className="px-6 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+              <h2 className="text-text-primary font-semibold text-sm">Document Upload</h2>
+            </div>
+            <div className="p-8">
+              {/* Error */}
+              {error && (
+                <div className="flex items-center gap-2 mb-4 px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(255,77,109,0.08)', border: '1px solid rgba(255,77,109,0.25)', color: '#FF4D6D' }}>
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              {/* Idle dropzone */}
+              {!uploadedFile && !uploading && (
+                <div
+                  className="rounded-xl border-2 border-dashed flex flex-col items-center justify-center py-16 cursor-pointer transition-all"
+                  style={{ borderColor: isDragging ? '#00E5FF' : 'rgba(0,229,255,0.2)', background: isDragging ? 'rgba(0,229,255,0.04)' : 'transparent' }}
+                  onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(0,229,255,0.4)'; e.currentTarget.style.background = 'rgba(0,229,255,0.02)'; }}
+                  onMouseLeave={e => { if (!isDragging) { e.currentTarget.style.borderColor = 'rgba(0,229,255,0.2)'; e.currentTarget.style.background = 'transparent'; } }}
+                >
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5" style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)' }}>
+                    <Upload className="w-7 h-7" style={{ color: '#00E5FF' }} />
+                  </div>
+                  <h3 className="font-serif text-xl font-semibold text-text-primary mb-2">Drop BFSI RFP PDF</h3>
+                  <p className="text-text-muted text-sm text-center max-w-sm mb-4">
+                    PDF only. ProposalPilot will scan the document and extract opportunity metadata automatically.
+                  </p>
+                  <span className="text-xs text-text-muted px-3 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    PDF up to 50 MB
+                  </span>
+                  <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={handleInputChange} />
+                </div>
+              )}
+
+              {/* Uploading */}
+              {uploading && (
+                <div className="rounded-xl flex flex-col items-center justify-center py-16" style={{ border: '1px solid rgba(0,229,255,0.2)', background: 'rgba(0,229,255,0.02)' }}>
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5" style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.3)' }}>
+                    <Upload className="w-7 h-7 text-neon-cyan animate-bounce" />
+                  </div>
+                  <div className="text-text-primary font-semibold mb-2">Uploading document...</div>
+                  <div className="text-text-muted text-sm mb-6">Transferring to secure storage</div>
+                  <div className="w-64 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${uploadProgress}%`, background: 'linear-gradient(90deg, #00E5FF, #00F5A0)' }}
+                    />
+                  </div>
+                  <div className="text-neon-cyan font-mono text-xs mt-2">{uploadProgress}%</div>
+                </div>
+              )}
+
+              {/* Success state */}
+              {uploadedFile && (
+                <div className="rounded-xl p-6 animate-slide-up" style={{ border: '1px solid rgba(0,245,160,0.3)', background: 'rgba(0,245,160,0.04)' }}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(0,245,160,0.1)', border: '1px solid rgba(0,245,160,0.25)' }}>
+                        <File className="w-6 h-6" style={{ color: '#00F5A0' }} />
+                      </div>
+                      <div>
+                        <div className="text-text-primary font-semibold text-sm">{uploadedFile.name}</div>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-text-muted text-xs">{uploadedFile.size}</span>
+                          <span className="text-text-muted text-xs">·</span>
+                          <span className="text-text-muted text-xs">Uploaded to secure storage</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium" style={{ background: 'rgba(0,245,160,0.1)', color: '#00F5A0' }}>
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Document received
+                      </div>
+                      <button onClick={handleReset} className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10" style={{ color: '#64748B' }}>
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="px-4 py-3 rounded-lg text-sm text-text-secondary" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)' }}>
+                    Document received. Ready for metadata extraction.
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 flex items-center gap-2 text-xs text-text-muted">
+                <Scale className="w-3.5 h-3.5" />
+                Documents are processed securely for proposal intelligence.
+              </div>
+            </div>
+          </div>
+
+          {/* Info Cards */}
+          <div>
+            <div className="text-xs text-text-muted uppercase tracking-widest mb-4">Metadata ProposalPilot will extract</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {infoCards.map((card, i) => (
+                <div key={i} className="rounded-xl p-4 card-hover" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div className="flex items-center gap-2 mb-2 text-text-muted">
+                    {card.icon}
+                    <span className="text-xs font-medium text-text-secondary">{card.label}</span>
+                  </div>
+                  <p className="text-text-muted text-xs leading-relaxed">{card.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => onNavigate('metadata')}
+              disabled={!uploadedFile}
+              className="px-7 py-3 rounded-lg font-semibold text-sm text-background transition-all hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:scale-100"
+              style={{ background: uploadedFile ? 'linear-gradient(135deg, #00E5FF, #00B8CC)' : '#64748B', boxShadow: uploadedFile ? '0 0 30px rgba(0,229,255,0.25)' : 'none' }}
+            >
+              Start Extraction
+            </button>
+            <button
+              onClick={() => onNavigate('workspace')}
+              className="px-7 py-3 rounded-lg font-medium text-sm text-text-secondary transition-all hover:text-text-primary"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
