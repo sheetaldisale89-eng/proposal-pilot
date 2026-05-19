@@ -1,11 +1,7 @@
-// TODO: Demo/no-login mode. Before production, restore Supabase Auth and user-level RLS.
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { DEMO_USER_ID } from '@/lib/demo';
 import type { RfpProject, CreateProjectInput } from '@/lib/types';
-
-// Demo mode: fixed user ID used in place of auth.uid()
-// TODO: Replace with real auth.uid() before production.
-export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 export const useProjects = () => {
   const [projects, setProjects] = useState<RfpProject[]>([]);
@@ -13,20 +9,25 @@ export const useProjects = () => {
   const [error, setError] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const { data, error: fetchError } = await supabase
-      .from('rfp_projects')
-      .select('*')
-      .is('archived_at', null)
-      .order('created_at', { ascending: false });
+    try {
+      setLoading(true);
+      setError(null);
 
-    if (fetchError) {
-      setError(fetchError.message);
-    } else {
+      const { data, error: fetchError } = await supabase
+        .from('rfp_projects')
+        .select('*')
+        .is('archived_at', null)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
       setProjects((data as RfpProject[]) ?? []);
+    } catch (err) {
+      console.error('[FETCH PROJECTS ERROR]', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch projects');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -44,7 +45,11 @@ export const useProjects = () => {
       .select()
       .single();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      console.error('[CREATE PROJECT ERROR]', insertError);
+      throw insertError;
+    }
+
     const project = data as RfpProject;
     setProjects(prev => [project, ...prev]);
     return project;
@@ -56,7 +61,11 @@ export const useProjects = () => {
       .update(updates)
       .eq('id', id);
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      console.error('[UPDATE PROJECT ERROR]', updateError);
+      throw updateError;
+    }
+
     setProjects(prev => prev.map(p => (p.id === id ? { ...p, ...updates } : p)));
   };
 

@@ -22,13 +22,17 @@ export default function App() {
   const [uploadedFileInfo, setUploadedFileInfo] = useState<{ name: string; size: string; storagePath: string; projectId: string } | null>(null);
 
   const navigate = (page: string, data?: unknown) => {
+    console.log('[APP NAVIGATE]', page, data);
+
     if (page === 'export') {
       setExportOpen(true);
       return;
     }
+
     if (page === 'brief' && data) {
       setActiveProject(data as RfpProject);
     }
+
     setCurrentPage(page as Page);
     window.scrollTo(0, 0);
   };
@@ -48,7 +52,12 @@ export default function App() {
     <>
       {currentPage === 'landing' && <LandingPage onNavigate={navigate} />}
       {currentPage === 'workspace' && <WorkspacePage onNavigate={navigate} />}
-      {currentPage === 'upload' && <UploadPage onNavigate={navigate} onFileUploaded={setUploadedFileInfo} />}
+      {currentPage === 'upload' && (
+        <UploadPage
+          onNavigate={navigate}
+          onFileUploaded={setUploadedFileInfo}
+        />
+      )}
       {currentPage === 'metadata' && <MetadataPage onNavigate={navigate} fileInfo={uploadedFileInfo} />}
       {currentPage === 'processing' && <ProcessingPage onNavigate={navigate} activeProject={activeProject as RfpProject | null} />}
       {currentPage === 'brief' && <IntelligenceBrief onNavigate={navigate} project={activeProject as RfpProject | null} />}
