@@ -95,7 +95,10 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
         .from('rfp-documents')
         .upload(storagePath, file, { upsert: false, contentType: 'application/pdf' });
 
-      if (storageError) throw storageError;
+      if (storageError) {
+        console.error('[SUPABASE ERROR FULL]', JSON.stringify(storageError, null, 2));
+        throw storageError;
+      }
       setUploadProgress(50);
 
       // Create rfp_files row
@@ -114,7 +117,10 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
         .select()
         .single();
 
-      if (fileRowError) throw fileRowError;
+      if (fileRowError) {
+        console.error('[SUPABASE ERROR FULL]', JSON.stringify(fileRowError, null, 2));
+        throw fileRowError;
+      }
       setUploadProgress(60);
 
       // Create ai_analysis_results row (initial status: queued)
@@ -132,7 +138,10 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
         .select()
         .single();
 
-      if (analysisCreateError) throw analysisCreateError;
+      if (analysisCreateError) {
+        console.error('[SUPABASE ERROR FULL]', JSON.stringify(analysisCreateError, null, 2));
+        throw analysisCreateError;
+      }
       setUploadProgress(65);
 
       // Call analyze-rfp edge function
@@ -253,7 +262,10 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
         })
         .eq('id', analysisRecord.id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('[SUPABASE ERROR FULL]', JSON.stringify(updateError, null, 2));
+        throw updateError;
+      }
       setUploadProgress(100);
 
       const info = { name: file.name, size: formatBytes(file.size), storagePath, projectId: project.id };
@@ -267,7 +279,8 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
 
     } catch (err) {
       console.error('[UPLOAD FLOW ERROR]', err);
-      setError(err instanceof Error ? err.message : 'Upload/analysis failed. Please try again.');
+      const e = err as { message?: string; details?: string; hint?: string };
+      setError(e.message || e.details || e.hint || 'Upload/analysis failed. Please try again.');
     } finally {
       setUploading(false);
     }

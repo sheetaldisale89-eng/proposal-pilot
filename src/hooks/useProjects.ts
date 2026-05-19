@@ -19,12 +19,16 @@ export const useProjects = () => {
         .is('archived_at', null)
         .order('created_at', { ascending: false });
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error('[SUPABASE ERROR FULL]', JSON.stringify(fetchError, null, 2));
+        throw fetchError;
+      }
 
       setProjects((data as RfpProject[]) ?? []);
     } catch (err) {
       console.error('[FETCH PROJECTS ERROR]', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch projects');
+      const e = err as { message?: string; details?: string; hint?: string };
+      setError(e.message || e.details || e.hint || 'Failed to fetch projects');
     } finally {
       setLoading(false);
     }
@@ -46,7 +50,7 @@ export const useProjects = () => {
       .single();
 
     if (insertError) {
-      console.error('[CREATE PROJECT ERROR]', insertError);
+      console.error('[SUPABASE ERROR FULL]', JSON.stringify(insertError, null, 2));
       throw insertError;
     }
 
@@ -62,7 +66,7 @@ export const useProjects = () => {
       .eq('id', id);
 
     if (updateError) {
-      console.error('[UPDATE PROJECT ERROR]', updateError);
+      console.error('[SUPABASE ERROR FULL]', JSON.stringify(updateError, null, 2));
       throw updateError;
     }
 
