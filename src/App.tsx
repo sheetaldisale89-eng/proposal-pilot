@@ -1,7 +1,6 @@
-// TODO: Demo/no-login mode — authentication is disabled.
-// Before production, restore useAuth(), protect routes, and re-enable RLS.
 import { useState } from 'react';
 import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
 import WorkspacePage from './pages/WorkspacePage';
 import UploadPage from './pages/UploadPage';
 import MetadataPage from './pages/MetadataPage';
@@ -13,7 +12,7 @@ import { RfpAnalyzer } from './components/RfpAnalyzer';
 import Sidebar from './components/Sidebar';
 import type { RfpProject } from '@/lib/types';
 
-type Page = 'landing' | 'workspace' | 'upload' | 'metadata' | 'processing' | 'brief' | 'settings' | 'analyzer';
+type Page = 'landing' | 'login' | 'workspace' | 'upload' | 'metadata' | 'processing' | 'brief' | 'settings' | 'analyzer';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('landing');
@@ -51,6 +50,7 @@ export default function App() {
   return (
     <>
       {currentPage === 'landing' && <LandingPage onNavigate={navigate} />}
+      {currentPage === 'login' && <LoginPage onNavigate={navigate} />}
       {currentPage === 'workspace' && <WorkspacePage onNavigate={navigate} />}
       {currentPage === 'upload' && (
         <UploadPage
