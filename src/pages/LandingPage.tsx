@@ -22,9 +22,8 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           <nav className="hidden md:flex items-center gap-8">
             <a href="#" className="text-text-secondary text-sm hover:text-text-primary transition-colors">Product</a>
             <a href="#" className="text-text-secondary text-sm hover:text-text-primary transition-colors">How It Works</a>
-            <button onClick={() => onNavigate('login')} className="text-text-secondary text-sm hover:text-text-primary transition-colors">Login</button>
             <button
-              onClick={() => onNavigate('login')}
+              onClick={() => onNavigate('upload')}
               className="px-4 py-2 text-sm font-medium text-background rounded-lg transition-all hover:shadow-glow-cyan"
               style={{ background: 'linear-gradient(135deg, #00E5FF, #00B8CC)', boxShadow: '0 0 20px rgba(0,229,255,0.25)' }}
             >
@@ -67,7 +66,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               </p>
               <div className="flex flex-wrap gap-4">
                 <button
-                  onClick={() => onNavigate('login')}
+                  onClick={() => onNavigate('upload')}
                   className="group flex items-center gap-2 px-7 py-3.5 rounded-lg font-semibold text-background transition-all hover:scale-105"
                   style={{ background: 'linear-gradient(135deg, #FFD166, #FFB020)', boxShadow: '0 0 30px rgba(255,209,102,0.3)' }}
                 >
@@ -251,7 +250,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </h2>
           <p className="text-text-secondary text-lg mb-10">Upload your BFSI RFP and receive a pursuit-ready intelligence brief in minutes.</p>
           <button
-            onClick={() => onNavigate('login')}
+            onClick={() => onNavigate('upload')}
             className="group inline-flex items-center gap-3 px-10 py-4 rounded-lg font-semibold text-lg text-background transition-all hover:scale-105"
             style={{ background: 'linear-gradient(135deg, #00E5FF, #00B8CC)', boxShadow: '0 0 40px rgba(0,229,255,0.3)' }}
           >
