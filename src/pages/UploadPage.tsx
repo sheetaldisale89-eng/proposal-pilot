@@ -26,6 +26,23 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Safely read a string from an unknown value
+function str(val: unknown, fallback = ''): string {
+  if (val == null) return fallback;
+  return String(val);
+}
+
+// Safely read an array from an unknown value
+function toArr(val: unknown): unknown[] {
+  return Array.isArray(val) ? val : [];
+}
+
+// Safely read an object from an unknown value
+function toObj(val: unknown): Record<string, unknown> {
+  if (val && typeof val === 'object' && !Array.isArray(val)) return val as Record<string, unknown>;
+  return {};
+}
+
 export default function UploadPage({ onNavigate, onFileUploaded }: UploadPageProps) {
   const { createProject } = useProjects();
   const [isDragging, setIsDragging] = useState(false);
@@ -36,238 +53,256 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
-  if (!file.type.includes('pdf')) {
-    setError('Only PDF files are accepted.');
-    return;
-  }
-  if (file.size > 50 * 1024 * 1024) {
-    setError('File exceeds the 50 MB limit.');
-    return;
-  }
-  setError(null);
-  setUploading(true);
-  setUploadProgress(10);
-
-  try {
-    // Demo mode: use fixed demo user ID instead of auth.getUser()
-    // TODO: Replace DEMO_USER_ID with auth.getUser() before production.
-    const userId = DEMO_USER_ID;
-
-    // Create a draft project
-    const project = await createProject({
-      title: file.name.replace('.pdf', '').replace(/_/g, ' '),
-      client_name: '',
-      institution_type: 'Banking',
-      rfp_category: '',
-      description: '',
-      due_date: null,
-    });
-
-    setUploadProgress(30);
-
-    // Extract text from PDF client-side before uploading
-    const { extractTextFromPdf } = await import('@/lib/pdfUtils');
-    const rfpText = await extractTextFromPdf(file);
-    if (!rfpText || rfpText.length < 200) {
-      throw new Error('PDF extraction failed or text too short (< 200 words)');
+    if (!file.type.includes('pdf')) {
+      setError('Only PDF files are accepted.');
+      return;
     }
-    setUploadProgress(40);
+    if (file.size > 50 * 1024 * 1024) {
+      setError('File exceeds the 50 MB limit.');
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    setUploadProgress(10);
 
-    // Upload PDF to Supabase Storage (demo path — no user auth required)
-    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `demo/${project.id}/${Date.now()}-${safeFileName}`;
-    const { error: storageError } = await supabase.storage
-      .from('rfp-documents')
-      .upload(storagePath, file, { upsert: false, contentType: 'application/pdf' });
-
-    if (storageError) throw storageError;
-    setUploadProgress(50);
-
-    // Create rfp_files row
-    const { data: rfpFileData, error: fileRowError } = await supabase.from('rfp_files').insert({
-      project_id: project.id,
-      uploaded_by: userId,
-      bucket_name: 'rfp-documents',
-      storage_path: storagePath,
-      original_file_name: file.name,
-      file_type: 'application/pdf',
-      file_size_bytes: file.size,
-      status: 'uploaded',
-    }).select().single();
-
-    if (fileRowError) throw fileRowError;
-    setUploadProgress(60);
-
-    // Create ai_analysis_results row (initial status: queued)
-    const { data: analysisRecord, error: analysisCreateError } = await supabase
-      .from('ai_analysis_results')
-      .insert({
-        project_id: project.id,
-        rfp_file_id: rfpFileData.id,
-        created_by: userId,
-        status: 'queued',
-        model_provider: 'openai',
-        model_name: 'gpt-4-turbo',
-        started_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (analysisCreateError) throw analysisCreateError;
-    setUploadProgress(65);
-
-    // Call analyze-rfp edge function server-side
-    const { data: fnData, error: fnError } = await supabase.functions.invoke('analyze-rfp', {
-      body: { rfpText },
-    });
-
-    console.log('Edge function response:', { fnData, fnError });
-
-    if (fnError) throw new Error(`Edge function error: ${fnError.message || JSON.stringify(fnError)}`);
-    if (!fnData) throw new Error('Edge function returned no data');
-    if (fnData.error) throw new Error(`Analysis error: ${fnData.error}`);
-    if (!fnData.json) throw new Error('Edge function response missing JSON field');
-
-    let analysisJson: Record<string, unknown>;
     try {
-      analysisJson = JSON.parse(fnData.json);
-    } catch {
-      throw new Error(`Failed to parse analysis JSON: ${String(fnData.json).slice(0, 200)}`);
+      // Demo mode: use fixed demo user ID instead of auth.getUser()
+      // TODO: Replace DEMO_USER_ID with auth.getUser() before production.
+      const userId = DEMO_USER_ID;
+
+      // Create a draft project
+      const project = await createProject({
+        title: file.name.replace(/\.pdf$/i, '').replace(/_/g, ' '),
+        client_name: '',
+        institution_type: 'Banking',
+        rfp_category: '',
+        description: '',
+        due_date: null,
+      });
+
+      setUploadProgress(30);
+
+      // Extract text from PDF client-side before uploading
+      const { extractTextFromPdf } = await import('@/lib/pdfUtils');
+      const rfpText = await extractTextFromPdf(file);
+      if (!rfpText || rfpText.length < 200) {
+        throw new Error('PDF extraction failed or text too short (< 200 words)');
+      }
+      setUploadProgress(40);
+
+      // Upload PDF to Supabase Storage (demo path — no user auth required)
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `demo/${project.id}/${Date.now()}-${safeFileName}`;
+      const { error: storageError } = await supabase.storage
+        .from('rfp-documents')
+        .upload(storagePath, file, { upsert: false, contentType: 'application/pdf' });
+
+      if (storageError) throw storageError;
+      setUploadProgress(50);
+
+      // Create rfp_files row
+      const { data: rfpFileData, error: fileRowError } = await supabase
+        .from('rfp_files')
+        .insert({
+          project_id: project.id,
+          uploaded_by: userId,
+          bucket_name: 'rfp-documents',
+          storage_path: storagePath,
+          original_file_name: file.name,
+          file_type: 'application/pdf',
+          file_size_bytes: file.size,
+          status: 'uploaded',
+        })
+        .select()
+        .single();
+
+      if (fileRowError) throw fileRowError;
+      setUploadProgress(60);
+
+      // Create ai_analysis_results row (initial status: queued)
+      const { data: analysisRecord, error: analysisCreateError } = await supabase
+        .from('ai_analysis_results')
+        .insert({
+          project_id: project.id,
+          rfp_file_id: rfpFileData.id,
+          created_by: userId,
+          status: 'queued',
+          model_provider: 'openai',
+          model_name: 'gpt-4o',
+          started_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (analysisCreateError) throw analysisCreateError;
+      setUploadProgress(65);
+
+      // Call analyze-rfp edge function
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('analyze-rfp', {
+        body: { rfpText },
+      });
+
+      if (fnError) throw new Error(`Edge function error: ${fnError.message || JSON.stringify(fnError)}`);
+      if (!fnData) throw new Error('Edge function returned no data');
+      if (fnData.error) throw new Error(`Analysis error: ${fnData.error}`);
+      if (!fnData.json) throw new Error('Edge function response missing JSON field');
+
+      let analysisJson: Record<string, unknown>;
+      try {
+        analysisJson = JSON.parse(fnData.json);
+      } catch {
+        throw new Error(`Failed to parse analysis JSON: ${String(fnData.json).slice(0, 200)}`);
+      }
+      setUploadProgress(80);
+
+      // ── Extract fields from new structured_json shape ──────────────────────
+      // The new prompt returns: { structured_json: { opportunity_overview, scope_snapshot,
+      // eligibility_criteria_table, evaluation_criteria, important_dates,
+      // commercial_and_submission_requirements, red_flags, clarification_questions } }
+      const sj = toObj(analysisJson.structured_json ?? analysisJson);
+
+      const ov = toObj(sj.opportunity_overview);
+      const evalCrit = toObj(sj.evaluation_criteria);
+      const eligRows = toArr(sj.eligibility_criteria_table) as Record<string, unknown>[];
+      const scopeSnapshot = toArr(sj.scope_snapshot) as string[];
+      const scopeWorkstreams = toArr(sj.scope_of_work) as Record<string, unknown>[];
+      const importantDates = toArr(sj.important_dates) as Record<string, unknown>[];
+      const commercialReqs = toArr(sj.commercial_and_submission_requirements) as Record<string, unknown>[];
+      const redFlags = toArr(sj.red_flags) as Record<string, unknown>[];
+      const clarQs = toArr(sj.clarification_questions) as Record<string, unknown>[];
+
+      // Derive title and client from opportunity_overview
+      const rfpTitle = str(ov.rfp_title) || file.name.replace(/\.pdf$/i, '').replace(/_/g, ' ');
+      const issuingAuthority = str(ov.client);
+
+      // Build executive summary from overview fields
+      const executiveSummary = [
+        str(ov.recommendation) ? `Recommendation: ${str(ov.recommendation)}` : null,
+        str(ov.one_line_reason) || null,
+      ].filter(Boolean).join('\n\n') || null;
+
+      // Key dates array from important_dates
+      const keyDates = importantDates.map(d => ({
+        label: str(d.event),
+        value: str(d.date_time),
+        notes: str(d.mode_notes),
+      })).filter(d => d.label && d.value);
+
+      // Eligibility criteria — preserve full table rows
+      const eligibilityCriteria = eligRows.map(row => ({
+        sr_no: str(row.sr_no),
+        criteria_category: str(row.criteria_category),
+        eligibility_requirement: str(row.eligibility_requirement),
+        documents_to_be_submitted: toArr(row.documents_to_be_submitted),
+        mandatory_or_desirable: str(row.mandatory_or_desirable),
+        proposal_team_action: str(row.proposal_team_action),
+        source_reference: str(row.source_reference),
+      }));
+
+      // Scope of work — use workstreams if available, else snapshot bullets
+      const scopeOfWork = scopeWorkstreams.length > 0
+        ? scopeWorkstreams.map(ws => ({
+            workstream: str(ws.workstream),
+            what_bank_wants: str(ws.what_bank_wants),
+            deliverables: toArr(ws.deliverables),
+            timeline: str(ws.timeline),
+          }))
+        : scopeSnapshot.map(b => ({ workstream: b }));
+
+      // Evaluation criteria — flatten for legacy column
+      const evalStages = toArr(evalCrit.stages) as Record<string, unknown>[];
+      const detailedScoring = toArr(evalCrit.detailed_scoring_table);
+      const evaluationCriteria = [
+        {
+          evaluation_process: str(evalCrit.evaluation_process),
+          technical_weightage: str(evalCrit.technical_weightage),
+          commercial_weightage: str(evalCrit.commercial_weightage),
+          minimum_technical_qualifying_score: str(evalCrit.minimum_technical_qualifying_score),
+          commercial_bid_opening_rule: str(evalCrit.commercial_bid_opening_rule),
+          final_selection_method: str(evalCrit.final_selection_method),
+          special_conditions: toArr(evalCrit.special_conditions),
+          stages: evalStages,
+          detailed_scoring_table: detailedScoring,
+        },
+      ];
+
+      // Red flags
+      const risksAndRedFlags = redFlags.map(f => ({
+        flag: str(f.flag),
+        detail: str(f.detail),
+        risk_level: str(f.risk_level),
+        recommended_action: str(f.recommended_action),
+      }));
+
+      // Commercial requirements
+      const commercialSummary = commercialReqs
+        .map(r => `${str(r.item)}: ${str(r.detail)}`)
+        .filter(Boolean)
+        .join(' | ') || null;
+
+      // Eligibility text summary for legacy column
+      const eligibilitySummary = eligRows.length > 0
+        ? `${eligRows.length} eligibility criteria extracted`
+        : null;
+
+      // ── Update rfp_projects with extracted title and client ────────────────
+      await supabase
+        .from('rfp_projects')
+        .update({
+          title: rfpTitle,
+          client_name: issuingAuthority || null,
+          status: 'completed',
+        })
+        .eq('id', project.id);
+
+      // ── Update ai_analysis_results with parsed data ────────────────────────
+      const { error: updateError } = await supabase
+        .from('ai_analysis_results')
+        .update({
+          status: 'completed',
+          executive_summary: executiveSummary,
+          rfp_objective: str(ov.rfp_title) || null,
+          scope_summary: scopeSnapshot.slice(0, 3).join('; ') || null,
+          eligibility_summary: eligibilitySummary,
+          compliance_summary: null,
+          commercial_summary: commercialSummary,
+          technical_summary: str(evalCrit.evaluation_process) || null,
+          key_dates: keyDates,
+          eligibility_criteria: eligibilityCriteria,
+          scope_of_work: scopeOfWork,
+          compliance_matrix: [],
+          evaluation_criteria: evaluationCriteria,
+          required_documents: commercialReqs,
+          risks_and_red_flags: risksAndRedFlags,
+          clarification_questions: clarQs,
+          win_themes: [],
+          recommended_actions: [],
+          full_analysis_json: analysisJson,
+          confidence_score: 85,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', analysisRecord.id);
+
+      if (updateError) throw updateError;
+      setUploadProgress(100);
+
+      const info = { name: file.name, size: formatBytes(file.size), storagePath, projectId: project.id };
+      setUploadedFile(info);
+      onFileUploaded(info);
+      localStorage.setItem('lastProjectId', project.id);
+
+      setTimeout(() => {
+        onNavigate('brief', { id: project.id });
+      }, 1000);
+
+    } catch (err) {
+      console.error('Upload error:', err);
+      setError(err instanceof Error ? `Error: ${err.message}` : `Unknown error: ${JSON.stringify(err)}`);
+    } finally {
+      setUploading(false);
     }
-    console.log('Parsed analysis JSON keys:', Object.keys(analysisJson));
-    setUploadProgress(80);
+  };
 
-    // Map nested AI JSON fields to flat DB columns
-    const snap = (analysisJson.rfp_snapshot ?? {}) as Record<string, unknown>;
-    const bidDesk = (analysisJson.bid_desk_summary ?? {}) as Record<string, unknown>;
-    const eligObj = (analysisJson.eligibility_criteria ?? {}) as Record<string, unknown>;
-    const scopeObj = (analysisJson.scope_of_work ?? {}) as Record<string, unknown>;
-    const evalObj = (analysisJson.evaluation_criteria ?? {}) as Record<string, unknown>;
-    const redFlags = (analysisJson.red_flags_and_ambiguities ?? {}) as Record<string, unknown>;
-    const strategy = (analysisJson.proposal_strategy_recommendations ?? {}) as Record<string, unknown>;
-    const nextSteps = (analysisJson.recommended_next_steps ?? {}) as Record<string, unknown>;
-    const clarQs = Array.isArray(analysisJson.clarification_questions) ? analysisJson.clarification_questions : [];
-    const complianceList = Array.isArray(analysisJson.compliance_checklist) ? analysisJson.compliance_checklist : [];
-    const meta = (analysisJson.analysis_metadata ?? {}) as Record<string, unknown>;
-
-    const executiveSummary = [
-      bidDesk.one_line_summary,
-      bidDesk.go_no_go_signal ? `Go/No-Go: ${bidDesk.go_no_go_signal}` : null,
-    ].filter(Boolean).join('\n\n') || null;
-
-    const rfpObjective = bidDesk.opportunity_type as string || meta.document_type as string || null;
-
-    const scopeSummary = (scopeObj.scope_summary as string) || null;
-    const eligibilitySummary = [
-      ...(Array.isArray(eligObj.financial_requirements) ? eligObj.financial_requirements : []),
-      ...(Array.isArray(eligObj.technical_requirements) ? eligObj.technical_requirements : []),
-    ].join('; ') || null;
-    const complianceSummary = complianceList.length > 0 ? `${complianceList.length} compliance items identified` : null;
-    const commercialSummary = (bidDesk.strategic_relevance as string) || null;
-    const technicalSummary = (scopeObj.scope_summary as string) || (bidDesk.bid_complexity as string) || null;
-
-    const allRedFlags = [
-      ...(Array.isArray(redFlags.commercial_red_flags) ? redFlags.commercial_red_flags : []),
-      ...(Array.isArray(redFlags.delivery_red_flags) ? redFlags.delivery_red_flags : []),
-      ...(Array.isArray(redFlags.legal_or_contractual_red_flags) ? redFlags.legal_or_contractual_red_flags : []),
-      ...(Array.isArray(redFlags.technical_red_flags) ? redFlags.technical_red_flags : []),
-      ...(Array.isArray(redFlags.eligibility_red_flags) ? redFlags.eligibility_red_flags : []),
-      ...(Array.isArray(redFlags.timeline_red_flags) ? redFlags.timeline_red_flags : []),
-    ];
-
-    const allRecommendedActions = [
-      ...(Array.isArray(nextSteps.within_24_hours) ? nextSteps.within_24_hours : []),
-      ...(Array.isArray(nextSteps.within_3_days) ? nextSteps.within_3_days : []),
-      ...(Array.isArray(nextSteps.before_submission) ? nextSteps.before_submission : []),
-    ];
-
-    const keyDates = snap ? [
-      snap.submission_deadline ? { label: 'Submission Deadline', value: snap.submission_deadline } : null,
-      snap.pre_bid_meeting_date ? { label: 'Pre-Bid Meeting', value: snap.pre_bid_meeting_date } : null,
-      snap.clarification_deadline ? { label: 'Clarification Deadline', value: snap.clarification_deadline } : null,
-      snap.bid_opening_date ? { label: 'Bid Opening', value: snap.bid_opening_date } : null,
-    ].filter(Boolean) : [];
-
-    // Update rfp_projects with extracted title and institution from analysis
-    const rfpTitle =
-      (snap.rfp_title as string) ||
-      (bidDesk.rfp_title as string) ||
-      file.name.replace(/\.pdf$/i, '').replace(/_/g, ' ');
-    const issuingAuthority =
-      (snap.issuing_authority as string) ||
-      (bidDesk.issuing_authority as string) ||
-      '';
-    await supabase
-      .from('rfp_projects')
-      .update({ title: rfpTitle, client_name: issuingAuthority })
-      .eq('id', project.id);
-
-    // Update ai_analysis_results row with parsed data
-    const { error: updateError } = await supabase
-      .from('ai_analysis_results')
-      .update({
-        status: 'completed',
-        executive_summary: executiveSummary,
-        rfp_objective: rfpObjective,
-        scope_summary: scopeSummary,
-        eligibility_summary: eligibilitySummary,
-        compliance_summary: complianceSummary,
-        commercial_summary: commercialSummary,
-        technical_summary: technicalSummary,
-        key_dates: keyDates,
-        eligibility_criteria: [
-          ...(Array.isArray(eligObj.legal_and_entity_requirements) ? eligObj.legal_and_entity_requirements : []),
-          ...(Array.isArray(eligObj.financial_requirements) ? eligObj.financial_requirements : []),
-          ...(Array.isArray(eligObj.technical_requirements) ? eligObj.technical_requirements : []),
-          ...(Array.isArray(eligObj.experience_requirements) ? eligObj.experience_requirements : []),
-          ...(Array.isArray(eligObj.certifications_required) ? eligObj.certifications_required : []),
-        ],
-        scope_of_work: [
-          ...(Array.isArray(scopeObj.in_scope_items) ? scopeObj.in_scope_items : []),
-          ...(Array.isArray(scopeObj.functional_scope) ? scopeObj.functional_scope : []),
-          ...(Array.isArray(scopeObj.technical_scope) ? scopeObj.technical_scope : []),
-        ],
-        compliance_matrix: complianceList,
-        evaluation_criteria: [
-          ...(Array.isArray(evalObj.technical_evaluation_criteria) ? evalObj.technical_evaluation_criteria : []),
-          ...(Array.isArray(evalObj.financial_evaluation_criteria) ? evalObj.financial_evaluation_criteria : []),
-        ],
-        required_documents: Array.isArray(analysisJson.submission_requirements)
-          ? analysisJson.submission_requirements
-          : ((analysisJson.submission_requirements as Record<string, unknown>)?.supporting_documents ?? []) as unknown[],
-        risks_and_red_flags: allRedFlags,
-        clarification_questions: clarQs,
-        win_themes: Array.isArray(strategy.win_themes) ? strategy.win_themes : [],
-        recommended_actions: allRecommendedActions,
-        full_analysis_json: analysisJson,
-        confidence_score: meta.analysis_confidence === 'High' ? 90 : meta.analysis_confidence === 'Medium' ? 70 : 50,
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', analysisRecord.id);
-
-    if (updateError) throw updateError;
-    setUploadProgress(100);
-
-    const info = { name: file.name, size: formatBytes(file.size), storagePath, projectId: project.id };
-    setUploadedFile(info);
-    onFileUploaded(info);
-    localStorage.setItem('lastProjectId', project.id);
-
-    setTimeout(() => {
-      onNavigate('brief', { id: project.id });
-    }, 1000);
-
-  } catch (err) {
-    console.error('FULL ERROR:', err);
-    setError(err instanceof Error
-      ? `Error: ${err.message}`
-      : `Unknown error: ${JSON.stringify(err)}`
-    );
-  } finally {
-    setUploading(false);
-  }
-};
-  
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
@@ -352,8 +387,13 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
                   <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5" style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.3)' }}>
                     <Upload className="w-7 h-7 text-neon-cyan animate-bounce" />
                   </div>
-                  <div className="text-text-primary font-semibold mb-2">Uploading document...</div>
-                  <div className="text-text-muted text-sm mb-6">Transferring to secure storage</div>
+                  <div className="text-text-primary font-semibold mb-2">Analysing RFP document...</div>
+                  <div className="text-text-muted text-sm mb-6">
+                    {uploadProgress < 40 ? 'Uploading to secure storage...' :
+                     uploadProgress < 65 ? 'Extracting PDF text...' :
+                     uploadProgress < 80 ? 'Running AI analysis...' :
+                     'Saving intelligence brief...'}
+                  </div>
                   <div className="w-64 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
                     <div
                       className="h-full rounded-full transition-all duration-500"
@@ -377,14 +417,14 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-text-muted text-xs">{uploadedFile.size}</span>
                           <span className="text-text-muted text-xs">·</span>
-                          <span className="text-text-muted text-xs">Uploaded to secure storage</span>
+                          <span className="text-text-muted text-xs">Analysis complete — redirecting...</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium" style={{ background: 'rgba(0,245,160,0.1)', color: '#00F5A0' }}>
                         <CheckCircle className="w-3.5 h-3.5" />
-                        Document received
+                        Analysis complete
                       </div>
                       <button onClick={handleReset} className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10" style={{ color: '#64748B' }}>
                         <X className="w-3.5 h-3.5" />
@@ -392,7 +432,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
                     </div>
                   </div>
                   <div className="px-4 py-3 rounded-lg text-sm text-text-secondary" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)' }}>
-                    Document received. Ready for metadata extraction.
+                    Intelligence brief generated. Opening report...
                   </div>
                 </div>
               )}
@@ -423,19 +463,11 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
           {/* Action Buttons */}
           <div className="flex items-center gap-4">
             <button
-              onClick={() => onNavigate('metadata')}
-              disabled={!uploadedFile}
-              className="px-7 py-3 rounded-lg font-semibold text-sm text-background transition-all hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:scale-100"
-              style={{ background: uploadedFile ? 'linear-gradient(135deg, #00E5FF, #00B8CC)' : '#64748B', boxShadow: uploadedFile ? '0 0 30px rgba(0,229,255,0.25)' : 'none' }}
-            >
-              Start Extraction
-            </button>
-            <button
               onClick={() => onNavigate('workspace')}
               className="px-7 py-3 rounded-lg font-medium text-sm text-text-secondary transition-all hover:text-text-primary"
               style={{ border: '1px solid rgba(255,255,255,0.08)' }}
             >
-              Cancel
+              Back to Workspace
             </button>
           </div>
         </div>
