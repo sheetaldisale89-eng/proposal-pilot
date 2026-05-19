@@ -1,7 +1,8 @@
+// TODO: Demo/no-login mode — authentication is currently disabled.
+// Before production, restore useAuth() and re-enable the Security/logout section.
 import { useState } from 'react';
-import { User, Building2, FileText, Download, Shield, LogOut } from 'lucide-react';
+import { User, Building2, FileText, Download, Shield } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
-import { useAuth } from '@/hooks/useAuth';
 
 interface SettingsPageProps {
   onNavigate: (page: string) => void;
@@ -41,12 +42,6 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 
 export default function SettingsPage({ onNavigate }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState('report');
-  const { signOut } = useAuth();
-
-  const handleLogout = async () => {
-    await signOut();
-    onNavigate('landing');
-  };
 
   const [reportPrefs, setReportPrefs] = useState({
     executiveBrief: true,
@@ -75,7 +70,7 @@ export default function SettingsPage({ onNavigate }: SettingsPageProps) {
       <div className="flex-1 overflow-auto">
         <div className="px-8 py-5 border-b sticky top-0 z-10 backdrop-blur-md" style={{ borderColor: 'rgba(255,255,255,0.06)', background: 'rgba(3,7,18,0.9)' }}>
           <h1 className="font-serif text-2xl font-bold text-text-primary">Settings</h1>
-          <p className="text-text-muted text-sm mt-0.5">Manage your workspace preferences and account settings</p>
+          <p className="text-text-muted text-sm mt-0.5">Manage your workspace preferences</p>
         </div>
 
         <div className="flex p-8 gap-8 max-w-5xl">
@@ -205,40 +200,20 @@ export default function SettingsPage({ onNavigate }: SettingsPageProps) {
             )}
 
             {activeSection === 'security' && (
-              <div className="space-y-5">
-                <div className="rounded-2xl overflow-hidden" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div className="px-6 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                    <h2 className="text-text-primary font-semibold">Security</h2>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    <div className="rounded-xl p-4" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.15)' }}>
-                      <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#00E5FF' }}>Session</div>
-                      <p className="text-text-secondary text-sm">You are currently signed in as a BFSI Practice pursuit lead. Session expires after 8 hours of inactivity.</p>
-                    </div>
-                    <div className="rounded-xl p-4" style={{ background: '#0F1B2E', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div className="text-xs font-semibold uppercase tracking-wider mb-2 text-text-muted">Change Password</div>
-                      {['Current password', 'New password', 'Confirm new password'].map((label, i) => (
-                        <div key={i} className="mb-3">
-                          <label className="block text-xs text-text-muted mb-1.5">{label}</label>
-                          <input type="password" placeholder="••••••••" className="w-full px-3 py-2.5 rounded-lg text-sm" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.08)', color: '#F5F9FF' }} />
-                        </div>
-                      ))}
-                      <button className="px-5 py-2 rounded-lg text-sm font-medium text-background mt-2" style={{ background: 'linear-gradient(135deg, #00E5FF, #00B8CC)' }}>Update Password</button>
-                    </div>
-                  </div>
+              <div className="rounded-2xl overflow-hidden" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="px-6 py-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                  <h2 className="text-text-primary font-semibold">Security</h2>
                 </div>
-
-                <div className="rounded-2xl p-5" style={{ background: 'rgba(255,77,109,0.05)', border: '1px solid rgba(255,77,109,0.2)' }}>
-                  <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#FF4D6D' }}>Sign Out</div>
-                  <p className="text-text-muted text-sm mb-4">This will end your session and return you to the landing page. All unsaved changes will be lost.</p>
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all hover:scale-105"
-                    style={{ background: 'rgba(255,77,109,0.1)', border: '1px solid rgba(255,77,109,0.3)', color: '#FF4D6D' }}
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Logout
-                  </button>
+                <div className="p-6">
+                  <div className="rounded-xl p-5" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.2)' }}>
+                    <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#00E5FF' }}>Demo Mode Enabled</div>
+                    <p className="text-text-secondary text-sm leading-relaxed">
+                      Authentication is currently disabled. The app runs in demo mode — no login is required. All data is stored in the shared workspace database.
+                    </p>
+                    <p className="text-text-muted text-xs mt-3">
+                      To enable authentication and per-user data isolation, restore Supabase Auth and user-level RLS before production deployment.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}

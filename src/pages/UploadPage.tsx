@@ -1,8 +1,9 @@
+// TODO: Demo/no-login mode. Before production, restore Supabase Auth and user-level RLS.
 import { useState, useRef } from 'react';
 import { Upload, File, CheckCircle, X, FileText, Calendar, Users, DollarSign, Layers, Award, ClipboardList, Scale, AlertCircle } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import { supabase } from '@/lib/supabase';
-import { useProjects } from '@/hooks/useProjects';
+import { useProjects, DEMO_USER_ID } from '@/hooks/useProjects';
 
 interface UploadPageProps {
   onNavigate: (page: string) => void;
@@ -48,8 +49,9 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
   setUploadProgress(10);
 
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
+    // Demo mode: use fixed demo user ID instead of auth.getUser()
+    // TODO: Replace DEMO_USER_ID with auth.getUser() before production.
+    const userId = DEMO_USER_ID;
 
     // Create a draft project
     const project = await createProject({
@@ -71,8 +73,9 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
     }
     setUploadProgress(40);
 
-    // Upload PDF to Supabase Storage
-    const storagePath = `${user.id}/${project.id}/${file.name}`;
+    // Upload PDF to Supabase Storage (demo path — no user auth required)
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `demo/${project.id}/${Date.now()}-${safeFileName}`;
     const { error: storageError } = await supabase.storage
       .from('rfp-documents')
       .upload(storagePath, file, { upsert: false, contentType: 'application/pdf' });
@@ -83,7 +86,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
     // Create rfp_files row
     const { data: rfpFileData, error: fileRowError } = await supabase.from('rfp_files').insert({
       project_id: project.id,
-      uploaded_by: user.id,
+      uploaded_by: userId,
       bucket_name: 'rfp-documents',
       storage_path: storagePath,
       original_file_name: file.name,
@@ -101,7 +104,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
       .insert({
         project_id: project.id,
         rfp_file_id: rfpFileData.id,
-        created_by: user.id,
+        created_by: userId,
         status: 'queued',
         model_provider: 'openai',
         model_name: 'gpt-4-turbo',

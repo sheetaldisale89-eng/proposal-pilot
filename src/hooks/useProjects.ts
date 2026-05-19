@@ -1,6 +1,11 @@
+// TODO: Demo/no-login mode. Before production, restore Supabase Auth and user-level RLS.
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { RfpProject, CreateProjectInput } from '@/lib/types';
+
+// Demo mode: fixed user ID used in place of auth.uid()
+// TODO: Replace with real auth.uid() before production.
+export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 export const useProjects = () => {
   const [projects, setProjects] = useState<RfpProject[]>([]);
@@ -29,14 +34,11 @@ export const useProjects = () => {
   }, [fetchProjects]);
 
   const createProject = async (input: CreateProjectInput): Promise<RfpProject> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
-
     const { data, error: insertError } = await supabase
       .from('rfp_projects')
       .insert({
         ...input,
-        owner_user_id: user.id,
+        owner_user_id: DEMO_USER_ID,
         status: 'draft',
       })
       .select()
