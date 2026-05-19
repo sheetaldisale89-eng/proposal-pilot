@@ -1,9 +1,7 @@
-// TODO: Demo/no-login mode. Before production, restore Supabase Auth and user-level RLS.
 import { useState, useRef } from 'react';
 import { Upload, File, CheckCircle, X, FileText, Calendar, Users, DollarSign, Layers, Award, ClipboardList, Scale, AlertCircle } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import { supabase } from '@/lib/supabase';
-import { DEMO_USER_ID } from '@/lib/demo';
 import { useProjects } from '@/hooks/useProjects';
 
 interface UploadPageProps {
@@ -66,7 +64,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
     setUploadProgress(10);
 
     try {
-      const userId = DEMO_USER_ID;
+      const userId = localStorage.getItem('userEmail') || 'anonymous';
 
       // Create a draft project
       const project = await createProject({
@@ -90,7 +88,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
 
       // Upload PDF to Supabase Storage
       const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const storagePath = `demo/${project.id}/${Date.now()}-${safeFileName}`;
+      const storagePath = `${userId}/${project.id}/${safeFileName}`;
       const { error: storageError } = await supabase.storage
         .from('rfp-documents')
         .upload(storagePath, file, { upsert: false, contentType: 'application/pdf' });

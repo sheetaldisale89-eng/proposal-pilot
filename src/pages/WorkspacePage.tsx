@@ -107,13 +107,13 @@ export default function WorkspacePage({ onNavigate }: WorkspacePageProps) {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: projectsData }, { data: analysisData }, { data: userData }] = await Promise.all([
+      const [{ data: projectsData }, { data: analysisData }] = await Promise.all([
         supabase.from('rfp_projects').select('*').is('archived_at', null).order('created_at', { ascending: false }),
         supabase.from('ai_analysis_results').select('project_id, status, full_analysis_json'),
-        supabase.auth.getUser(),
       ]);
 
-      if (userData?.user?.email) setUserEmail(userData.user.email);
+      const email = localStorage.getItem('userEmail') || '';
+      setUserEmail(email);
 
       const rawProjects = (projectsData as RfpProject[]) ?? [];
 

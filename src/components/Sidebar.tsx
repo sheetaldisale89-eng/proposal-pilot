@@ -1,4 +1,4 @@
-import { Brain, LayoutDashboard, Upload, FileText, Download, Settings, Zap } from 'lucide-react';
+import { Brain, LayoutDashboard, Upload, FileText, Download, Settings, Zap, LogOut } from 'lucide-react';
 
 interface SidebarProps {
   currentPage: string;
@@ -15,6 +15,15 @@ const navItems = [
 ];
 
 export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+  const email = localStorage.getItem('userEmail') || '';
+  const name = email.split('@')[0].split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') || 'User';
+  const initial = name.charAt(0);
+
+  const handleSignOut = () => {
+    localStorage.removeItem('userEmail');
+    onNavigate('landing');
+  };
+
   return (
     <div className="w-56 flex-shrink-0 flex flex-col h-screen sticky top-0" style={{ background: '#08111F', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
       {/* Logo */}
@@ -57,13 +66,23 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
 
       {/* Footer */}
       <div className="p-4 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center gap-2.5 px-2">
-          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0" style={{ background: 'rgba(0,229,255,0.15)', color: '#00E5FF' }}>P</div>
-          <div>
-            <div className="text-xs text-text-primary font-medium">Pursuit Lead</div>
-            <div className="text-[10px] text-text-muted">BFSI Practice</div>
+        <div className="flex items-center gap-2.5 px-2 mb-3">
+          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 flex-none" style={{ background: 'rgba(0,229,255,0.15)', color: '#00E5FF' }}>{initial}</div>
+          <div className="min-w-0">
+            <div className="text-xs text-text-primary font-medium truncate">{name}</div>
+            <div className="text-[10px] text-text-muted truncate">{email}</div>
           </div>
         </div>
+        <button
+          onClick={handleSignOut}
+          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all"
+          style={{ color: '#9CAEC4' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,77,109,0.08)'; e.currentTarget.style.color = '#FF4D6D'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9CAEC4'; }}
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Sign Out
+        </button>
       </div>
     </div>
   );
