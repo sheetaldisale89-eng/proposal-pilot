@@ -24,12 +24,6 @@ export default function App() {
   const navigate = (page: string, data?: unknown) => {
     console.log('[APP NAVIGATE]', page, data);
 
-    if (page === 'login') {
-      console.warn('[LOGIN BLOCKED] Login is disabled. Redirecting to workspace.');
-      setCurrentPage('workspace');
-      return;
-    }
-
     if (page === 'export') {
       setExportOpen(true);
       return;
