@@ -64,7 +64,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
     setUploadProgress(10);
 
     try {
-      const userId = localStorage.getItem('userEmail') || 'anonymous';
+      const userId = '00000000-0000-0000-0000-000000000001';
 
       // Create a draft project
       const project = await createProject({
@@ -270,10 +270,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
       setUploadedFile(info);
       onFileUploaded(info);
       localStorage.setItem('lastProjectId', project.id);
-
-      setTimeout(() => {
-        onNavigate('brief', { id: project.id });
-      }, 1000);
+      onNavigate('brief', { id: project.id });
 
     } catch (err) {
       console.error('[UPLOAD FLOW ERROR]', err);

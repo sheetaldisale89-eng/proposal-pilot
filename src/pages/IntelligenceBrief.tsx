@@ -153,19 +153,24 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
   const projectId = project?.id || localStorage.getItem('lastProjectId');
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data?.user?.email) setUserEmail(data.user.email);
-    });
+    const email = localStorage.getItem('userEmail');
+    if (email) setUserEmail(email);
   }, []);
 
   useEffect(() => {
     if (!projectId) { setFetchError('No project selected.'); setLoading(false); return; }
+    console.log('Project ID:', projectId);
     supabase
       .from('ai_analysis_results')
       .select('*')
       .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
       .then(({ data, error }) => {
+        console.log('Analysis data:', data);
+        console.log('Analysis error:', error);
+        console.log('JSON keys:', Object.keys(data?.full_analysis_json || {}));
         if (error) setFetchError(`Failed to load analysis: ${error.message}`);
         else if (!data) setFetchError('No analysis found for this project.');
         else setAnalysis(data as AiAnalysis);
@@ -238,13 +243,14 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
   type ClarQ      = { question: string; section_reference: string; priority: string; why_critical: string };
   type WinTheme   = { theme: string; rationale: string; proof_points: string };
 
-  const eligibilityArr   = safeArr<EligItem>(full.eligibility_criteria);
-  const scopeArr         = safeArr<ScopeItem>(full.scope_of_work);
-  const evaluationArr    = safeArr<EvalItem>(full.evaluation_criteria);
-  const redFlagsArr      = safeArr<RedFlag>(full.red_flags);
+  // Read from full_analysis_json sub-keys (as stored by edge function) with fallback to top-level keys
+  const eligibilityArr   = safeArr<EligItem>(full.eligibility_criteria ?? safeObj(full.structured_json as unknown).eligibility_criteria);
+  const scopeArr         = safeArr<ScopeItem>(full.scope_of_work ?? safeObj(full.structured_json as unknown).scope_of_work);
+  const evaluationArr    = safeArr<EvalItem>(full.evaluation_criteria ?? safeObj(full.structured_json as unknown).evaluation_criteria);
+  const redFlagsArr      = safeArr<RedFlag>(full.red_flags ?? safeObj(full.structured_json as unknown).red_flags);
   const legalRisksArr    = safeArr<LegalRisk>(full.legal_commercial_risks);
-  const clarQsArr        = safeArr<ClarQ>(full.clarification_questions);
-  const winThemesArr     = safeArr<WinTheme>(full.win_themes);
+  const clarQsArr        = safeArr<ClarQ>(full.clarification_questions ?? safeObj(full.structured_json as unknown).clarification_questions);
+  const winThemesArr     = safeArr<WinTheme>(full.win_themes ?? safeObj(full.structured_json as unknown).win_themes);
 
   const next24h         = safeArr<string>(nextSteps.within_24_hours);
   const next3d          = safeArr<string>(nextSteps.within_3_days);

@@ -37,6 +37,11 @@ export default function App() {
       setActiveProject(data as RfpProject);
     }
 
+    // Guard: don't navigate away from brief back to workspace immediately after arriving
+    if (page === 'workspace' && currentPage === 'brief') {
+      return;
+    }
+
     setCurrentPage(page as Page);
     window.scrollTo(0, 0);
   };
