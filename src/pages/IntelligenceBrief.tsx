@@ -230,10 +230,12 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
 
   // ─── Data extraction ────────────────────────────────────────────────────────
   const full = safeObj(analysis.full_analysis_json);
+  // Support both flat format (new) and structured_json-wrapped format (old)
+  const nested = safeObj(full.structured_json as unknown);
 
-  const snap      = safeObj(full.rfp_snapshot);
-  const bidDesk   = safeObj(full.bid_desk_summary);
-  const nextSteps = safeObj(full.next_steps ?? (safeObj(full.recommended_next_steps)));
+  const snap      = safeObj(full.rfp_snapshot ?? nested.rfp_snapshot);
+  const bidDesk   = safeObj(full.bid_desk_summary ?? nested.bid_desk_summary);
+  const nextSteps = safeObj(full.next_steps ?? nested.next_steps ?? full.recommended_next_steps ?? nested.recommended_next_steps);
 
   type EligItem   = { criterion: string; requirement: string; mandatory: boolean; evidence_required: string; ey_assessment: string };
   type ScopeItem  = { workstream: string; what_bank_wants: string; deliverables: string[]; timeline: string };
@@ -243,14 +245,13 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
   type ClarQ      = { question: string; section_reference: string; priority: string; why_critical: string };
   type WinTheme   = { theme: string; rationale: string; proof_points: string };
 
-  // Read from full_analysis_json sub-keys (as stored by edge function) with fallback to top-level keys
-  const eligibilityArr   = safeArr<EligItem>(full.eligibility_criteria ?? safeObj(full.structured_json as unknown).eligibility_criteria);
-  const scopeArr         = safeArr<ScopeItem>(full.scope_of_work ?? safeObj(full.structured_json as unknown).scope_of_work);
-  const evaluationArr    = safeArr<EvalItem>(full.evaluation_criteria ?? safeObj(full.structured_json as unknown).evaluation_criteria);
-  const redFlagsArr      = safeArr<RedFlag>(full.red_flags ?? safeObj(full.structured_json as unknown).red_flags);
-  const legalRisksArr    = safeArr<LegalRisk>(full.legal_commercial_risks);
-  const clarQsArr        = safeArr<ClarQ>(full.clarification_questions ?? safeObj(full.structured_json as unknown).clarification_questions);
-  const winThemesArr     = safeArr<WinTheme>(full.win_themes ?? safeObj(full.structured_json as unknown).win_themes);
+  const eligibilityArr   = safeArr<EligItem>(full.eligibility_criteria ?? nested.eligibility_criteria);
+  const scopeArr         = safeArr<ScopeItem>(full.scope_of_work ?? nested.scope_of_work);
+  const evaluationArr    = safeArr<EvalItem>(full.evaluation_criteria ?? nested.evaluation_criteria);
+  const redFlagsArr      = safeArr<RedFlag>(full.red_flags ?? nested.red_flags);
+  const legalRisksArr    = safeArr<LegalRisk>(full.legal_commercial_risks ?? nested.legal_commercial_risks);
+  const clarQsArr        = safeArr<ClarQ>(full.clarification_questions ?? nested.clarification_questions);
+  const winThemesArr     = safeArr<WinTheme>(full.win_themes ?? nested.win_themes);
 
   const next24h         = safeArr<string>(nextSteps.within_24_hours);
   const next3d          = safeArr<string>(nextSteps.within_3_days);

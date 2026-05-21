@@ -395,17 +395,23 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Extract markdown from the structured_json.markdown_report field or trailing text
+    // Unwrap structured_json if present, keeping all keys flat
     const pj = parsedJson as Record<string, unknown>;
     const sj = (pj.structured_json ?? pj) as Record<string, unknown>;
     let markdownStr = typeof sj.markdown_report === "string" ? sj.markdown_report : "";
+    if (!markdownStr && typeof pj.markdown_report === "string") {
+      markdownStr = pj.markdown_report;
+    }
     if (!markdownStr) {
       // Fallback: any text after the JSON block
       markdownStr = cleaned.slice(jsonEnd + 1).replace(/^\s*PART\s*2[:\s]*/i, "").trim();
     }
 
+    // Build flat json — spread all structured_json keys to top level with markdown_report included
+    const flatJson: Record<string, unknown> = { ...sj, markdown_report: markdownStr };
+
     return new Response(
-      JSON.stringify({ json: JSON.stringify(parsedJson, null, 2), markdown: markdownStr }),
+      JSON.stringify({ json: JSON.stringify(flatJson, null, 2), markdown: markdownStr }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

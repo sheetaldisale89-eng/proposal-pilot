@@ -152,16 +152,25 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
       if (fnData.error) throw new Error(`Analysis error: ${fnData.error}`);
       if (!fnData.json) throw new Error('Edge function response missing JSON field');
 
-      let analysisJson: Record<string, unknown>;
+      let rawAnalysisJson: Record<string, unknown>;
       try {
-        analysisJson = JSON.parse(fnData.json);
+        rawAnalysisJson = JSON.parse(fnData.json || fnData.structured_json);
       } catch {
-        throw new Error(`Failed to parse analysis JSON: ${String(fnData.json).slice(0, 200)}`);
+        throw new Error(`Failed to parse analysis JSON: ${String(fnData.json ?? fnData.structured_json).slice(0, 200)}`);
       }
       setUploadProgress(80);
 
-      // ── Map new structured_json shape to DB columns ────────────────────────
-      const sj = toObj(analysisJson.structured_json ?? analysisJson);
+      // Normalize: if the AI wrapped everything under structured_json, unwrap it
+      const sj = toObj(rawAnalysisJson.structured_json ?? rawAnalysisJson);
+      const markdownStr = String(fnData.markdown || fnData.markdown_report || sj.markdown_report || '');
+
+      // Build flat full_analysis_json — spread structured keys + markdown at top level
+      const analysisJson: Record<string, unknown> = {
+        ...sj,
+        markdown_report: markdownStr,
+      };
+
+      // ── Map structured_json shape to DB columns ────────────────────────
       const ov = toObj(sj.opportunity_overview);
       const evalCrit = toObj(sj.evaluation_criteria);
       const eligRows = toArr(sj.eligibility_criteria_table) as Record<string, unknown>[];
