@@ -122,22 +122,6 @@ function ComplexityDot({ level }: { level: string }) {
   </span>;
 }
 
-function inferProofRequired(criterion: string, subCriterion: string): string {
-  const text = (criterion + ' ' + subCriterion).toLowerCase();
-  if (text.includes('turnover') || text.includes('revenue') || text.includes('financial'))
-    return 'Audited financial statements, CA certificate on letterhead';
-  if (text.includes('experience') || text.includes('project') || text.includes('engagement'))
-    return 'Work orders / LoA, completion certificates, client references on letterhead';
-  if (text.includes('team') || text.includes('resource') || text.includes('staff') || text.includes('personnel'))
-    return 'CVs with qualification certificates, employment proof';
-  if (text.includes('certif') || text.includes('iso') || text.includes('cmmi'))
-    return 'Valid certificate copies (with expiry date)';
-  if (text.includes('incorporation') || text.includes('legal') || text.includes('entity'))
-    return 'Certificate of incorporation, MoA/AoA';
-  if (text.includes('pan') || text.includes('gst') || text.includes('tax'))
-    return 'PAN card copy, GST registration certificate';
-  return 'Supporting documentation as specified by the issuing authority';
-}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function IntelligenceBrief({ onNavigate, project }: IntelligenceBriefProps) {
@@ -234,85 +218,91 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
   );
 
   // ─── Data extraction ────────────────────────────────────────────────────────
-  const full = safeObj(analysis.full_analysis_json);
-  // Support both flat format (new) and structured_json-wrapped format (old)
-  const nested = safeObj(full.structured_json as unknown);
+  const json = safeObj(analysis.full_analysis_json);
+  console.log('Full json structure:', json);
 
-  const snap      = safeObj(full.rfp_snapshot ?? nested.rfp_snapshot);
-  const bidDesk   = safeObj(full.bid_desk_summary ?? nested.bid_desk_summary);
-  const nextSteps = safeObj(full.next_steps ?? nested.next_steps ?? full.recommended_next_steps ?? nested.recommended_next_steps);
+  // Handles both flat format (new) and structured_json-wrapped format (old)
+  const getVal = (key: string): unknown =>
+    json[key] ?? safeObj(json.structured_json as unknown)[key];
 
-  type EligItem   = { criterion: string; requirement: string; mandatory: boolean; evidence_required: string; ey_assessment: string };
+  // AI returns opportunity_overview (not rfp_snapshot); try both
+  const snap    = safeObj(getVal('opportunity_overview') ?? getVal('rfp_snapshot'));
+  const bidDesk = safeObj(getVal('bid_desk_summary'));
+  const nextSteps = safeObj(getVal('next_steps') ?? getVal('recommended_next_steps'));
+  console.log('rfp_snapshot extracted:', snap);
+
+  type EligItem = {
+    sr_no: string; criteria_category: string; eligibility_requirement: string;
+    mandatory_or_desirable: string; documents_to_be_submitted: string[];
+    proposal_team_action: string;
+    // legacy
+    criterion: string; requirement: string; mandatory: boolean; evidence_required: string; ey_assessment: string;
+  };
   type ScopeItem  = { workstream: string; what_bank_wants: string; deliverables: string[]; timeline: string };
   type EvalItem   = { stage: string; criterion: string; sub_criterion: string; parameters: string; marks: number | string; max_marks: number | string };
+  type EvalStage  = { stage: string; description: string; qualification_rule: string };
+  type ScoringRow = { parameter: string; max_marks: number | string; notes: string };
   type RedFlag    = { flag: string; detail: string; risk_level: string; recommended_action: string };
   type LegalRisk  = { risk: string; detail: string; impact: string; suggested_clarification: string };
   type ClarQ      = { question: string; section_reference: string; priority: string; why_critical: string };
   type WinTheme   = { theme: string; rationale: string; proof_points: string };
 
-  const eligibilityArr   = safeArr<EligItem>(full.eligibility_criteria ?? nested.eligibility_criteria);
-  const scopeArr         = safeArr<ScopeItem>(full.scope_of_work ?? nested.scope_of_work);
-  const evaluationArr    = safeArr<EvalItem>(full.evaluation_criteria ?? nested.evaluation_criteria);
-  const redFlagsArr      = safeArr<RedFlag>(full.red_flags ?? nested.red_flags);
-  const legalRisksArr    = safeArr<LegalRisk>(full.legal_commercial_risks ?? nested.legal_commercial_risks);
-  const clarQsArr        = safeArr<ClarQ>(full.clarification_questions ?? nested.clarification_questions);
-  const winThemesArr     = safeArr<WinTheme>(full.win_themes ?? nested.win_themes);
+  const eligibilityArr = safeArr<EligItem>(getVal('eligibility_criteria_table') ?? getVal('eligibility_criteria'));
+  const scopeArr       = safeArr<ScopeItem>(getVal('scope_of_work'));
+  const evalCritObj    = safeObj(getVal('evaluation_criteria'));
+  const evalStages     = safeArr<EvalStage>(evalCritObj.stages);
+  const scoringTable   = safeArr<ScoringRow>(evalCritObj.detailed_scoring_table);
+  const evaluationArr  = safeArr<EvalItem>(Array.isArray(getVal('evaluation_criteria')) ? getVal('evaluation_criteria') : null);
+  const redFlagsArr    = safeArr<RedFlag>(getVal('red_flags'));
+  const legalRisksArr  = safeArr<LegalRisk>(getVal('legal_commercial_risks'));
+  const clarQsArr      = safeArr<ClarQ>(getVal('clarification_questions'));
+  const winThemesArr   = safeArr<WinTheme>(getVal('win_themes'));
 
-  const next24h         = safeArr<string>(nextSteps.within_24_hours);
-  const next3d          = safeArr<string>(nextSteps.within_3_days);
-  const nextPreBid      = safeArr<string>(nextSteps.before_pre_bid);
-  const nextSubmission  = safeArr<string>(nextSteps.before_submission);
+  const isMandatory = (e: EligItem) => {
+    if (typeof e.mandatory === 'boolean') return e.mandatory !== false;
+    return safeStr(e.mandatory_or_desirable).toLowerCase() !== 'desirable';
+  };
 
-  const recommendation  = safeStr(bidDesk.go_no_go || bidDesk.go_no_go_signal, project?.recommendation || 'Pending Analysis');
-  const goNoGoReasoning = safeStr(bidDesk.go_no_go_reasoning, '');
-  const topRisks        = safeArr<string>(bidDesk.top_risks);
-  const immediateActions= safeArr<string>(bidDesk.immediate_actions);
-  const strategicFit    = safeStr(bidDesk.strategic_fit, 'Not specified');
-  const bidComplexity   = safeStr(bidDesk.bid_complexity, 'Not specified');
-  const oneLiner        = safeStr(bidDesk.one_line_summary, '');
+  const next24h        = safeArr<string>(nextSteps.within_24_hours);
+  const next3d         = safeArr<string>(nextSteps.within_3_days);
+  const nextPreBid     = safeArr<string>(nextSteps.before_pre_bid);
+  const nextSubmission = safeArr<string>(nextSteps.before_submission);
+
+  const recommendation   = safeStr(bidDesk.go_no_go || bidDesk.go_no_go_signal || snap.recommendation, project?.recommendation || 'Pending Analysis');
+  const goNoGoReasoning  = safeStr(bidDesk.go_no_go_reasoning || snap.one_line_reason, '');
+  const topRisks         = safeArr<string>(bidDesk.top_risks);
+  const immediateActions = safeArr<string>(bidDesk.immediate_actions);
+  const strategicFit     = safeStr(bidDesk.strategic_fit, 'Not specified');
+  const bidComplexity    = safeStr(bidDesk.bid_complexity, 'Not specified');
+  const oneLiner         = safeStr(bidDesk.one_line_summary || snap.one_line_reason, '');
 
   // Eligibility summary bar
   const totalCriteria  = eligibilityArr.length;
-  const mandatoryCount = eligibilityArr.filter(e => e.mandatory !== false).length;
+  const mandatoryCount = eligibilityArr.filter(isMandatory).length;
   const canMeetCount   = eligibilityArr.filter(e => safeStr(e.ey_assessment).toLowerCase().startsWith('can meet')).length;
   const atRiskCount    = eligibilityArr.filter(e => {
     const a = safeStr(e.ey_assessment).toLowerCase();
     return a.startsWith('cannot') || a.startsWith('partially');
   }).length;
 
-  // Eval marks totals
-  const totalTechMarks = evaluationArr
-    .filter(e => safeStr(e.stage).toLowerCase().includes('tech'))
-    .reduce((sum, e) => sum + (Number(e.max_marks) || 0), 0);
-  const totalFinMarks = evaluationArr
-    .filter(e => safeStr(e.stage).toLowerCase().includes('fin'))
-    .reduce((sum, e) => sum + (Number(e.max_marks) || 0), 0);
-
-  // Sort risk flags: High → Medium → Low
   const riskOrder = (l: string) => l.toLowerCase() === 'high' ? 0 : l.toLowerCase() === 'medium' ? 1 : 2;
   const sortedRedFlags = [...redFlagsArr].sort((a, b) => riskOrder(safeStr(a.risk_level)) - riskOrder(safeStr(b.risk_level)));
-
-  // Sort clarification questions: High → Medium → Low
-  const sortedClarQs = [...clarQsArr].sort((a, b) => riskOrder(safeStr(a.priority)) - riskOrder(safeStr(b.priority)));
-
+  const sortedClarQs   = [...clarQsArr].sort((a, b) => riskOrder(safeStr(a.priority)) - riskOrder(safeStr(b.priority)));
   const confidenceScore = analysis?.confidence_score ?? null;
 
   // ─── Snapshot rows ──────────────────────────────────────────────────────────
   const snapFields = [
-    { label: 'Issuing Authority',         key: 'issuing_authority',        highlight: false },
-    { label: 'RFP Reference Number',      key: 'rfp_reference',            highlight: false },
-    { label: 'RFP Title',                 key: 'rfp_title',                highlight: false },
-    { label: 'Release Date',              key: 'release_date',             highlight: false },
-    { label: 'Pre-Bid Meeting Date',      key: 'pre_bid_meeting',          highlight: false },
-    { label: 'Clarification Deadline',    key: 'clarification_deadline',   highlight: false },
-    { label: 'Submission Deadline',       key: 'submission_deadline',      highlight: true  },
-    { label: 'Bid Opening Date',          key: 'bid_opening_date',         highlight: false },
-    { label: 'Contract Duration',         key: 'contract_duration',        highlight: false },
-    { label: 'Estimated Contract Value',  key: 'contract_value',           highlight: false },
-    { label: 'EMD Amount',                key: 'emd_amount',               highlight: false },
-    { label: 'Performance Bank Guarantee',key: 'performance_guarantee',    highlight: false },
-    { label: 'Evaluation Method',         key: 'evaluation_method',        highlight: false },
-    { label: 'Submission Mode',           key: 'submission_mode',          highlight: false },
+    { label: 'Issuing Authority / Client',  key: 'client',               highlight: false },
+    { label: 'RFP Reference Number',        key: 'rfp_reference',        highlight: false },
+    { label: 'RFP Title',                   key: 'rfp_title',            highlight: false },
+    { label: 'Submission Deadline',         key: 'submission_deadline',  highlight: true  },
+    { label: 'Contract Duration',           key: 'contract_duration',    highlight: false },
+    { label: 'Estimated Contract Value',    key: 'contract_value',       highlight: false },
+    { label: 'EMD Amount',                  key: 'emd_amount',           highlight: false },
+    { label: 'Performance Bank Guarantee',  key: 'performance_guarantee',highlight: false },
+    { label: 'Bid Validity',                key: 'bid_validity',         highlight: false },
+    { label: 'Submission Mode',             key: 'submission_mode',      highlight: false },
+    { label: 'Recommendation',              key: 'recommendation',       highlight: false },
   ];
 
   return (
@@ -381,38 +371,36 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
           <div className="max-w-4xl mx-auto px-8 py-10 space-y-16">
 
             {/* ══ 01. RFP SNAPSHOT ══════════════════════════════════════════ */}
+            {Object.keys(snap).length > 0 && (
             <section id="section-snapshot">
               <SectionHeader number="01" title="RFP Snapshot" />
-              {snapFields.some(f => snap[f.key]) ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {snapFields.map(f => {
-                    const val = safeStr(snap[f.key], '');
-                    return (
-                      <div key={f.key} className="rounded-xl p-4"
-                        style={{
-                          background: f.highlight ? 'rgba(255,176,32,0.06)' : '#08111F',
-                          border: f.highlight ? '1px solid rgba(255,176,32,0.3)' : '1px solid rgba(255,255,255,0.06)',
-                        }}>
-                        <div className="text-[10px] uppercase tracking-wider mb-1.5"
-                          style={{ color: f.highlight ? '#FFB020' : '#9CAEC4' }}>{f.label}</div>
-                        <div className="font-bold text-sm leading-snug"
-                          style={{ color: f.highlight ? '#FFD166' : val ? '#F5F9FF' : '#4A5568' }}>
-                          {val || 'Not specified'}
-                        </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {snapFields.map(f => {
+                  const val = safeStr(snap[f.key], '');
+                  return (
+                    <div key={f.key} className="rounded-xl p-4"
+                      style={{
+                        background: f.highlight ? 'rgba(255,176,32,0.06)' : '#08111F',
+                        border: f.highlight ? '1px solid rgba(255,176,32,0.3)' : '1px solid rgba(255,255,255,0.06)',
+                      }}>
+                      <div className="text-[10px] uppercase tracking-wider mb-1.5"
+                        style={{ color: f.highlight ? '#FFB020' : '#9CAEC4' }}>{f.label}</div>
+                      <div className="font-bold text-sm leading-snug"
+                        style={{ color: f.highlight ? '#FFD166' : val ? '#F5F9FF' : '#4A5568' }}>
+                        {val || 'Not specified'}
                       </div>
-                    );
-                  })}
-                </div>
-              ) : <EmptyState />}
+                    </div>
+                  );
+                })}
+              </div>
             </section>
-
-            <div className="section-divider" />
+            )}
 
             {/* ══ 02. SCOPE OF WORK ═════════════════════════════════════════ */}
+            {scopeArr.length > 0 && (
             <section id="section-scope">
               <SectionHeader number="02" title="Scope of Work" />
-              {scopeArr.length > 0 ? (
-                <div className="space-y-5">
+              <div className="space-y-5">
                   {scopeArr.map((ws, i) => (
                     <div key={i} className="rounded-2xl p-6"
                       style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
@@ -474,18 +462,15 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                       </div>
                     </div>
                   ))}
-                </div>
-              ) : <EmptyState />}
+              </div>
             </section>
-
-            <div className="section-divider" />
+            )}
 
             {/* ══ 03. ELIGIBILITY & COMPLIANCE ══════════════════════════════ */}
+            {eligibilityArr.length > 0 && (
             <section id="section-eligibility">
               <SectionHeader number="03" title="Eligibility & Compliance" />
-
-              {eligibilityArr.length > 0 ? (
-                <>
+              <>
                   {/* Summary bar */}
                   <div className="grid grid-cols-4 gap-3 mb-6">
                     {[
@@ -508,56 +493,112 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                       <table className="w-full text-xs">
                         <thead>
                           <tr style={{ background: '#08111F', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                            {['Criterion', 'Exact Requirement', 'Type', 'Evidence Required', 'EY Assessment'].map(h => (
+                            {['#', 'Category / Criterion', 'Exact Requirement', 'Type', 'Documents Required', 'Proposal Team Action'].map(h => (
                               <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-text-muted font-semibold whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {eligibilityArr.map((item, i) => (
+                          {eligibilityArr.map((item, i) => {
+                            const category    = safeStr(item.criteria_category || item.criterion, `Criterion ${i + 1}`);
+                            const requirement = safeStr(item.eligibility_requirement || item.requirement);
+                            const docs        = safeArr<string>(item.documents_to_be_submitted).join(', ') || safeStr(item.evidence_required, '—');
+                            const action      = safeStr(item.proposal_team_action, '—');
+                            return (
+                              <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)' }}>
+                                <td className="px-4 py-3 font-mono text-text-muted align-top">{safeStr(item.sr_no, String(i + 1))}</td>
+                                <td className="px-4 py-3 font-semibold text-text-primary align-top" style={{ minWidth: 160 }}>{category}</td>
+                                <td className="px-4 py-3 text-text-secondary align-top" style={{ minWidth: 220 }}>{requirement}</td>
+                                <td className="px-4 py-3 align-top whitespace-nowrap"><MandatoryBadge mandatory={isMandatory(item)} /></td>
+                                <td className="px-4 py-3 text-text-muted align-top" style={{ minWidth: 180 }}>{docs}</td>
+                                <td className="px-4 py-3 text-text-muted align-top" style={{ minWidth: 200 }}>{action}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+            </section>
+            )}
+
+            {/* ══ 04. EVALUATION CRITERIA ═══════════════════════════════════ */}
+            {(evalStages.length > 0 || Object.keys(evalCritObj).length > 0 || evaluationArr.length > 0) && (
+            <section id="section-evaluation">
+              <SectionHeader number="04" title="Evaluation Criteria" />
+              <div className="space-y-6">
+                {evalCritObj.evaluation_process && (
+                  <div className="rounded-xl p-5" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-text-muted">Evaluation Process</div>
+                    <p className="text-text-secondary text-sm leading-relaxed">{safeStr(evalCritObj.evaluation_process)}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    { label: 'Technical Weightage',             val: evalCritObj.technical_weightage,               color: '#00E5FF' },
+                    { label: 'Commercial Weightage',            val: evalCritObj.commercial_weightage,              color: '#FFD166' },
+                    { label: 'Min. Technical Qualifying Score', val: evalCritObj.minimum_technical_qualifying_score, color: '#00F5A0' },
+                    { label: 'Final Selection',                 val: evalCritObj.final_selection_method,            color: '#9CAEC4' },
+                  ].filter(p => p.val && p.val !== 'Not specified in the RFP').map(p => (
+                    <div key={p.label} className="rounded-xl px-4 py-3 flex flex-col gap-0.5"
+                      style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span className="text-[10px] uppercase tracking-wider text-text-muted">{p.label}</span>
+                      <span className="font-bold text-sm" style={{ color: p.color }}>{safeStr(p.val)}</span>
+                    </div>
+                  ))}
+                </div>
+                {evalStages.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Evaluation Stages</div>
+                    <div className="space-y-3">
+                      {evalStages.map((s, i) => (
+                        <div key={i} className="rounded-xl p-4 flex items-start gap-4"
+                          style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center font-mono font-bold text-xs flex-shrink-0"
+                            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
+                            {i + 1}
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-semibold text-sm text-text-primary mb-1">{safeStr(s.stage, `Stage ${i + 1}`)}</div>
+                            {s.description && <p className="text-text-muted text-xs mb-1">{safeStr(s.description)}</p>}
+                            {s.qualification_rule && s.qualification_rule !== 'Not specified in the RFP' && (
+                              <span className="text-[10px] px-2 py-0.5 rounded" style={{ background: 'rgba(0,245,160,0.08)', color: '#00F5A0' }}>
+                                {safeStr(s.qualification_rule)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {scoringTable.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Detailed Scoring Parameters</div>
+                    <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr style={{ background: '#08111F', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            {['Parameter', 'Max Marks', 'Notes'].map(h => (
+                              <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-text-muted font-semibold">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {scoringTable.map((row, i) => (
                             <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)' }}>
-                              <td className="px-4 py-3 font-semibold text-text-primary align-top whitespace-nowrap">{safeStr(item.criterion)}</td>
-                              <td className="px-4 py-3 text-text-secondary align-top" style={{ minWidth: 220 }}>{safeStr(item.requirement)}</td>
-                              <td className="px-4 py-3 align-top whitespace-nowrap"><MandatoryBadge mandatory={item.mandatory !== false} /></td>
-                              <td className="px-4 py-3 text-text-muted align-top" style={{ minWidth: 180 }}>{safeStr(item.evidence_required)}</td>
-                              <td className="px-4 py-3 align-top whitespace-nowrap"><AssessmentBadge value={safeStr(item.ey_assessment, 'Pending Review')} /></td>
+                              <td className="px-4 py-3 text-text-primary align-top">{safeStr(row.parameter)}</td>
+                              <td className="px-4 py-3 font-mono font-bold align-top" style={{ color: '#00E5FF' }}>{safeStr(String(row.max_marks))}</td>
+                              <td className="px-4 py-3 text-text-muted align-top">{safeStr(row.notes, '—')}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   </div>
-                </>
-              ) : <EmptyState />}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* ══ 04. EVALUATION CRITERIA ═══════════════════════════════════ */}
-            <section id="section-evaluation">
-              <SectionHeader number="04" title="Evaluation Criteria" />
-
-              {evaluationArr.length > 0 ? (
-                <>
-                  {/* Totals bar */}
-                  <div className="flex flex-wrap gap-4 mb-6">
-                    {totalTechMarks > 0 && (
-                      <div className="rounded-xl px-5 py-3 flex items-center gap-3"
-                        style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.2)' }}>
-                        <span className="text-[10px] text-text-muted uppercase tracking-wider">Total Technical Marks</span>
-                        <span className="font-bold text-lg font-mono" style={{ color: '#00E5FF' }}>{totalTechMarks}</span>
-                      </div>
-                    )}
-                    {totalFinMarks > 0 && (
-                      <div className="rounded-xl px-5 py-3 flex items-center gap-3"
-                        style={{ background: 'rgba(255,209,102,0.06)', border: '1px solid rgba(255,209,102,0.2)' }}>
-                        <span className="text-[10px] text-text-muted uppercase tracking-wider">Total Financial Marks</span>
-                        <span className="font-bold text-lg font-mono" style={{ color: '#FFD166' }}>{totalFinMarks}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Expanded cards */}
+                )}
+                {evaluationArr.length > 0 && evalStages.length === 0 && (
                   <div className="space-y-4">
                     {evaluationArr.map((item, i) => {
                       const marks = Number(item.marks) || 0;
@@ -565,41 +606,16 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                       const pct = maxMarks > 0 ? Math.round((marks / maxMarks) * 100) : 0;
                       const stageLower = safeStr(item.stage).toLowerCase();
                       const stageColor = stageLower.includes('fin') ? '#FFD166' : '#00E5FF';
-                      const stageLabel = safeStr(item.stage, '—').toUpperCase();
-                      const proof = inferProofRequired(safeStr(item.criterion), safeStr(item.sub_criterion));
-
                       return (
-                        <div key={i} className="rounded-2xl p-6"
-                          style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                          {/* Stage + type badges */}
+                        <div key={i} className="rounded-2xl p-6" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
                           <div className="flex items-center gap-2 mb-3">
                             <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase"
                               style={{ background: stageLower.includes('fin') ? 'rgba(255,209,102,0.1)' : 'rgba(0,229,255,0.1)', color: stageColor }}>
-                              {stageLabel}
+                              {safeStr(item.stage, '—').toUpperCase()}
                             </span>
                           </div>
-
-                          {/* Title */}
                           <h3 className="font-semibold text-base text-text-primary mb-1">{safeStr(item.criterion, '—')}</h3>
-                          {item.sub_criterion && (
-                            <p className="text-text-muted text-sm mb-4">{safeStr(item.sub_criterion)}</p>
-                          )}
-
-                          {/* What is asked */}
-                          <div className="rounded-lg p-4 mb-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                            <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-text-muted">What is Asked</div>
-                            <p className="text-text-secondary text-sm leading-relaxed italic">
-                              "{safeStr(item.parameters, 'Refer to the RFP document for exact parameters.')}"
-                            </p>
-                          </div>
-
-                          {/* Proof required */}
-                          <div className="rounded-lg p-4 mb-4" style={{ background: 'rgba(0,229,255,0.03)', border: '1px solid rgba(0,229,255,0.1)' }}>
-                            <div className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#00E5FF' }}>Proof Required</div>
-                            <p className="text-text-muted text-sm">{proof}</p>
-                          </div>
-
-                          {/* Marks + progress bar */}
+                          {item.sub_criterion && <p className="text-text-muted text-sm mb-4">{safeStr(item.sub_criterion)}</p>}
                           {maxMarks > 0 && (
                             <div>
                               <div className="flex items-center justify-between mb-2">
@@ -609,7 +625,7 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                                 </span>
                               </div>
                               <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: stageColor }} />
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: stageColor }} />
                               </div>
                             </div>
                           )}
@@ -617,179 +633,167 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                       );
                     })}
                   </div>
-                </>
-              ) : <EmptyState />}
+                )}
+              </div>
             </section>
-
-            <div className="section-divider" />
+            )}
 
             {/* ══ 05. RISK RADAR ════════════════════════════════════════════ */}
+            {(sortedRedFlags.length > 0 || legalRisksArr.length > 0) && (
             <section id="section-risk">
               <SectionHeader number="05" title="Risk Radar" />
-
-              {sortedRedFlags.length > 0 || legalRisksArr.length > 0 ? (
-                <>
-                  {sortedRedFlags.length > 0 && (
-                    <div className="space-y-3 mb-6">
-                      {sortedRedFlags.map((r, i) => {
-                        const level = safeStr(r.risk_level, 'Medium').toLowerCase();
-                        const borderColor = level === 'high' ? '#FF4D6D' : level === 'medium' ? '#FFB020' : '#FFD166';
-                        const bgColor = level === 'high' ? 'rgba(255,77,109,0.04)' : level === 'medium' ? 'rgba(255,176,32,0.04)' : 'rgba(255,209,102,0.03)';
-                        return (
-                          <div key={i} className="rounded-xl p-5"
-                            style={{ background: bgColor, borderLeft: `3px solid ${borderColor}`, border: `1px solid rgba(255,255,255,0.06)`, borderLeftWidth: 3, borderLeftColor: borderColor }}>
-                            <div className="flex items-start justify-between gap-4 mb-2">
-                              <h3 className="font-semibold text-sm text-text-primary flex-1">{safeStr(r.flag)}</h3>
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase flex-shrink-0"
-                                style={{ background: `${bgColor}`, border: `1px solid ${borderColor}`, color: borderColor }}>
-                                {safeStr(r.risk_level, 'Medium')} Risk
-                              </span>
+              <>
+                {sortedRedFlags.length > 0 && (
+                  <div className="space-y-3 mb-6">
+                    {sortedRedFlags.map((r, i) => {
+                      const level = safeStr(r.risk_level, 'Medium').toLowerCase();
+                      const borderColor = level === 'high' ? '#FF4D6D' : level === 'medium' ? '#FFB020' : '#FFD166';
+                      const bgColor = level === 'high' ? 'rgba(255,77,109,0.04)' : level === 'medium' ? 'rgba(255,176,32,0.04)' : 'rgba(255,209,102,0.03)';
+                      return (
+                        <div key={i} className="rounded-xl p-5"
+                          style={{ background: bgColor, borderLeft: `3px solid ${borderColor}`, border: `1px solid rgba(255,255,255,0.06)`, borderLeftWidth: 3, borderLeftColor: borderColor }}>
+                          <div className="flex items-start justify-between gap-4 mb-2">
+                            <h3 className="font-semibold text-sm text-text-primary flex-1">{safeStr(r.flag)}</h3>
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase flex-shrink-0"
+                              style={{ background: bgColor, border: `1px solid ${borderColor}`, color: borderColor }}>
+                              {safeStr(r.risk_level, 'Medium')} Risk
+                            </span>
+                          </div>
+                          {r.detail && (
+                            <div className="mb-2">
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">What: </span>
+                              <span className="text-text-muted text-xs">{safeStr(r.detail)}</span>
                             </div>
-                            {r.detail && (
-                              <div className="mb-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">What: </span>
-                                <span className="text-text-muted text-xs">{safeStr(r.detail)}</span>
-                              </div>
-                            )}
-                            {r.recommended_action && (
-                              <div className="mt-2 flex items-start gap-1.5">
-                                <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: borderColor }} />
-                                <span className="text-xs font-medium" style={{ color: borderColor }}>Action: {safeStr(r.recommended_action)}</span>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                          )}
+                          {r.recommended_action && (
+                            <div className="mt-2 flex items-start gap-1.5">
+                              <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: borderColor }} />
+                              <span className="text-xs font-medium" style={{ color: borderColor }}>Action: {safeStr(r.recommended_action)}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {legalRisksArr.length > 0 && (
+                  <>
+                    <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Legal & Commercial Risks</div>
+                    <div className="space-y-3">
+                      {legalRisksArr.map((r, i) => (
+                        <div key={i} className="rounded-xl p-5"
+                          style={{ background: 'rgba(255,176,32,0.04)', borderLeft: '3px solid #FFB020', border: '1px solid rgba(255,176,32,0.15)', borderLeftWidth: 3, borderLeftColor: '#FFB020' }}>
+                          <h3 className="font-semibold text-sm text-text-primary mb-2">{safeStr(r.risk)}</h3>
+                          {r.detail && <p className="text-text-muted text-xs mb-2">{safeStr(r.detail)}</p>}
+                          {r.impact && <p className="text-xs mb-2"><span className="font-semibold" style={{ color: '#FFB020' }}>Impact: </span><span className="text-text-muted">{safeStr(r.impact)}</span></p>}
+                          {r.suggested_clarification && <p className="text-xs text-text-muted italic">Ask: {safeStr(r.suggested_clarification)}</p>}
+                        </div>
+                      ))}
                     </div>
-                  )}
-
-                  {legalRisksArr.length > 0 && (
-                    <>
-                      <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Legal & Commercial Risks</div>
-                      <div className="space-y-3">
-                        {legalRisksArr.map((r, i) => (
-                          <div key={i} className="rounded-xl p-5"
-                            style={{ background: 'rgba(255,176,32,0.04)', borderLeft: '3px solid #FFB020', border: '1px solid rgba(255,176,32,0.15)', borderLeftWidth: 3, borderLeftColor: '#FFB020' }}>
-                            <h3 className="font-semibold text-sm text-text-primary mb-2">{safeStr(r.risk)}</h3>
-                            {r.detail && <p className="text-text-muted text-xs mb-2">{safeStr(r.detail)}</p>}
-                            {r.impact && <p className="text-xs mb-2"><span className="font-semibold" style={{ color: '#FFB020' }}>Impact: </span><span className="text-text-muted">{safeStr(r.impact)}</span></p>}
-                            {r.suggested_clarification && <p className="text-xs text-text-muted italic">Ask: {safeStr(r.suggested_clarification)}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              ) : <EmptyState />}
+                  </>
+                )}
+              </>
             </section>
-
-            <div className="section-divider" />
+            )}
 
             {/* ══ 06. CLARIFICATION QUESTIONS ═══════════════════════════════ */}
+            {sortedClarQs.length > 0 && (
             <section id="section-questions">
               <SectionHeader number="06" title="Clarification Questions" />
-              {sortedClarQs.length > 0 ? (
-                <div className="space-y-3">
-                  {sortedClarQs.map((q, i) => (
-                    <div key={i} className="rounded-xl p-5"
-                      style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 font-mono text-xs font-bold"
-                          style={{ background: 'rgba(0,229,255,0.08)', color: '#00E5FF' }}>
-                          {String(i + 1).padStart(2, '0')}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-start justify-between gap-3 mb-2">
-                            <p className="font-semibold text-sm text-text-primary leading-snug">{safeStr(q.question)}</p>
-                            {q.priority && <PriorityBadge priority={safeStr(q.priority)} />}
-                          </div>
-                          {q.section_reference && (
-                            <p className="text-[10px] text-text-muted mb-1">Section: {safeStr(q.section_reference)}</p>
-                          )}
-                          {q.why_critical && (
-                            <p className="text-xs text-text-muted italic">{safeStr(q.why_critical)}</p>
-                          )}
-                        </div>
+              <div className="space-y-3">
+                {sortedClarQs.map((q, i) => (
+                  <div key={i} className="rounded-xl p-5"
+                    style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 font-mono text-xs font-bold"
+                        style={{ background: 'rgba(0,229,255,0.08)', color: '#00E5FF' }}>
+                        {String(i + 1).padStart(2, '0')}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ) : <EmptyState />}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* ══ 07. PROPOSAL STRATEGY ═════════════════════════════════════ */}
-            <section id="section-strategy">
-              <SectionHeader number="07" title="Proposal Strategy" />
-              {winThemesArr.length > 0 ? (
-                <div className="space-y-4">
-                  {winThemesArr.map((w, i) => (
-                    <div key={i} className="rounded-2xl p-6"
-                      style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: '#00E5FF' }} />
-                        <h3 className="font-bold text-base text-text-primary">{safeStr(w.theme, `Win Theme ${i + 1}`)}</h3>
-                      </div>
-                      {w.rationale && (
-                        <p className="text-text-secondary text-sm leading-relaxed mb-3">{safeStr(w.rationale)}</p>
-                      )}
-                      {w.proof_points && (
-                        <div className="rounded-lg px-4 py-3" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)' }}>
-                          <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#00E5FF' }}>Proof Points</div>
-                          <p className="text-text-muted text-xs italic">{safeStr(w.proof_points)}</p>
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <p className="font-semibold text-sm text-text-primary leading-snug">{safeStr(q.question)}</p>
+                          {q.priority && <PriorityBadge priority={safeStr(q.priority)} />}
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : <EmptyState />}
-            </section>
-
-            <div className="section-divider" />
-
-            {/* ══ 08. NEXT ACTIONS ══════════════════════════════════════════ */}
-            <section id="section-actions">
-              <SectionHeader number="08" title="Next Actions" />
-              {(next24h.length + next3d.length + nextPreBid.length + nextSubmission.length) > 0 ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {[
-                    { label: 'Within 24 Hours', items: next24h,        color: '#FF4D6D', bg: 'rgba(255,77,109,0.06)',   border: 'rgba(255,77,109,0.2)' },
-                    { label: 'Within 3 Days',   items: next3d,         color: '#FFB020', bg: 'rgba(255,176,32,0.06)',   border: 'rgba(255,176,32,0.2)' },
-                    { label: 'Before Pre-Bid',  items: nextPreBid,     color: '#00E5FF', bg: 'rgba(0,229,255,0.06)',    border: 'rgba(0,229,255,0.2)' },
-                    { label: 'Before Submission',items: nextSubmission, color: '#00F5A0', bg: 'rgba(0,245,160,0.06)',   border: 'rgba(0,245,160,0.2)' },
-                  ].map(col => (
-                    <div key={col.label} className="rounded-xl overflow-hidden"
-                      style={{ border: `1px solid ${col.border}` }}>
-                      <div className="px-4 py-3 text-xs font-bold uppercase tracking-wider"
-                        style={{ background: col.bg, color: col.color }}>{col.label}</div>
-                      <div className="p-3 space-y-2" style={{ background: '#08111F' }}>
-                        {col.items.length > 0 ? col.items.map((task, j) => {
-                          const key = `${col.label}-${j}`;
-                          const done = actionStatus[key] || false;
-                          return (
-                            <button key={j}
-                              className="w-full flex items-start gap-2 text-left text-xs text-text-secondary transition-opacity hover:text-text-primary"
-                              onClick={() => setActionStatus(prev => ({ ...prev, [key]: !prev[key] }))}>
-                              {done
-                                ? <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#00F5A0' }} />
-                                : <Circle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: col.color }} />}
-                              <span style={{ textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.5 : 1 }}>
-                                {safeStr(task)}
-                              </span>
-                            </button>
-                          );
-                        }) : (
-                          <p className="text-text-muted text-xs py-2">No actions specified.</p>
+                        {q.section_reference && (
+                          <p className="text-[10px] text-text-muted mb-1">Section: {safeStr(q.section_reference)}</p>
+                        )}
+                        {q.why_critical && (
+                          <p className="text-xs text-text-muted italic">{safeStr(q.why_critical)}</p>
                         )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : <EmptyState />}
+                  </div>
+                ))}
+              </div>
             </section>
+            )}
 
-            <div className="section-divider" />
+            {/* ══ 07. PROPOSAL STRATEGY ═════════════════════════════════════ */}
+            {winThemesArr.length > 0 && (
+            <section id="section-strategy">
+              <SectionHeader number="07" title="Proposal Strategy" />
+              <div className="space-y-4">
+                {winThemesArr.map((w, i) => (
+                  <div key={i} className="rounded-2xl p-6"
+                    style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: '#00E5FF' }} />
+                      <h3 className="font-bold text-base text-text-primary">{safeStr(w.theme, `Win Theme ${i + 1}`)}</h3>
+                    </div>
+                    {w.rationale && (
+                      <p className="text-text-secondary text-sm leading-relaxed mb-3">{safeStr(w.rationale)}</p>
+                    )}
+                    {w.proof_points && (
+                      <div className="rounded-lg px-4 py-3" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#00E5FF' }}>Proof Points</div>
+                        <p className="text-text-muted text-xs italic">{safeStr(w.proof_points)}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+            )}
+
+            {/* ══ 08. NEXT ACTIONS ══════════════════════════════════════════ */}
+            {(next24h.length + next3d.length + nextPreBid.length + nextSubmission.length) > 0 && (
+            <section id="section-actions">
+              <SectionHeader number="08" title="Next Actions" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Within 24 Hours',  items: next24h,        color: '#FF4D6D', bg: 'rgba(255,77,109,0.06)',  border: 'rgba(255,77,109,0.2)' },
+                  { label: 'Within 3 Days',    items: next3d,         color: '#FFB020', bg: 'rgba(255,176,32,0.06)',  border: 'rgba(255,176,32,0.2)' },
+                  { label: 'Before Pre-Bid',   items: nextPreBid,     color: '#00E5FF', bg: 'rgba(0,229,255,0.06)',   border: 'rgba(0,229,255,0.2)'  },
+                  { label: 'Before Submission',items: nextSubmission, color: '#00F5A0', bg: 'rgba(0,245,160,0.06)',   border: 'rgba(0,245,160,0.2)'  },
+                ].map(col => (
+                  <div key={col.label} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${col.border}` }}>
+                    <div className="px-4 py-3 text-xs font-bold uppercase tracking-wider"
+                      style={{ background: col.bg, color: col.color }}>{col.label}</div>
+                    <div className="p-3 space-y-2" style={{ background: '#08111F' }}>
+                      {col.items.length > 0 ? col.items.map((task, j) => {
+                        const key = `${col.label}-${j}`;
+                        const done = actionStatus[key] || false;
+                        return (
+                          <button key={j}
+                            className="w-full flex items-start gap-2 text-left text-xs text-text-secondary transition-opacity hover:text-text-primary"
+                            onClick={() => setActionStatus(prev => ({ ...prev, [key]: !prev[key] }))}>
+                            {done
+                              ? <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#00F5A0' }} />
+                              : <Circle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: col.color }} />}
+                            <span style={{ textDecoration: done ? 'line-through' : 'none', opacity: done ? 0.5 : 1 }}>
+                              {safeStr(task)}
+                            </span>
+                          </button>
+                        );
+                      }) : (
+                        <p className="text-text-muted text-xs py-2">No actions specified.</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            )}
 
             {/* ══ 09. DECISION SUMMARY (LAST) ═══════════════════════════════ */}
             <section id="section-decision">
