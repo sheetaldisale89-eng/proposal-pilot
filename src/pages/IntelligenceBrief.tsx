@@ -168,9 +168,14 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
       .limit(1)
       .maybeSingle()
       .then(({ data, error }) => {
-        console.log('Analysis data:', data);
+        console.log('=== IntelligenceBrief Debug ===');
+        console.log('Project ID:', projectId);
+        console.log('Analysis record:', data);
+        console.log('full_analysis_json keys:', data ? Object.keys(data?.full_analysis_json || {}) : 'no data');
+        console.log('rfp_snapshot:', data?.full_analysis_json?.rfp_snapshot);
+        console.log('scope_of_work:', data?.full_analysis_json?.scope_of_work);
+        console.log('eligibility_criteria:', data?.full_analysis_json?.eligibility_criteria);
         console.log('Analysis error:', error);
-        console.log('JSON keys:', Object.keys(data?.full_analysis_json || {}));
         if (error) setFetchError(`Failed to load analysis: ${error.message}`);
         else if (!data) setFetchError('No analysis found for this project.');
         else setAnalysis(data as AiAnalysis);
