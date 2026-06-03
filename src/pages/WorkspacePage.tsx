@@ -117,17 +117,26 @@ export default function WorkspacePage({ onNavigate }: WorkspacePageProps) {
 
       const rawProjects = (projectsData as RfpProject[]) ?? [];
 
+      // Single source of truth: structured_json.recommendation → opportunity_overview.recommendation → bid_desk_summary fallback
       const recMap: Record<string, string> = {};
       for (const a of (analysisData ?? [])) {
         const full = (a.full_analysis_json as Record<string, unknown>) ?? {};
+        // New schema: recommendation at root of structured_json (which is spread flat)
+        const rootRec = String(full.recommendation || '');
+        if (rootRec) { recMap[a.project_id] = rootRec; continue; }
+        // New schema: opportunity_overview.recommendation
+        const ov = (full.opportunity_overview as Record<string, unknown>) ?? {};
+        const ovRec = String(ov.recommendation || '');
+        if (ovRec) { recMap[a.project_id] = ovRec; continue; }
+        // Legacy fallback: bid_desk_summary
         const bidDesk = (full.bid_desk_summary as Record<string, unknown>) ?? {};
-        const goNoGo = String(bidDesk.go_no_go || bidDesk.go_no_go_signal || '');
-        if (goNoGo) recMap[a.project_id] = goNoGo;
+        const legacyRec = String(bidDesk.go_no_go || bidDesk.go_no_go_signal || '');
+        if (legacyRec) recMap[a.project_id] = legacyRec;
       }
 
       const enriched: ProjectWithRec[] = rawProjects.map(p => ({
         ...p,
-        go_no_go: recMap[p.id] || p.recommendation || undefined,
+        go_no_go: recMap[p.id] || (p as RfpProject & { recommendation?: string }).recommendation || undefined,
       }));
 
       setProjects(enriched);

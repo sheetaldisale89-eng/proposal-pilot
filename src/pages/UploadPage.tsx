@@ -170,58 +170,79 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
         markdown_report: markdownStr,
       };
 
-      // ── Map structured_json shape to DB columns ────────────────────────
+      // ── Map new structured_json shape to DB columns ───────────────────
       const ov = toObj(sj.opportunity_overview);
-      const evalCrit = toObj(sj.evaluation_criteria);
+      const scopeDetailed = toObj(sj.scope_detailed);
+      const overallEval = toObj(sj.overall_evaluation_method);
+      const commercialEval = toObj(sj.commercial_evaluation_criteria);
+      const techEvalRows = toArr(sj.technical_evaluation_criteria) as Record<string, unknown>[];
       const eligRows = toArr(sj.eligibility_criteria_table) as Record<string, unknown>[];
-      const scopeSnapshot = toArr(sj.scope_snapshot) as string[];
-      const scopeWorkstreams = toArr(sj.scope_of_work) as Record<string, unknown>[];
       const importantDates = toArr(sj.important_dates) as Record<string, unknown>[];
       const commercialReqs = toArr(sj.commercial_and_submission_requirements) as Record<string, unknown>[];
       const redFlags = toArr(sj.red_flags) as Record<string, unknown>[];
       const clarQs = toArr(sj.clarification_questions) as Record<string, unknown>[];
+      const nextActions = toObj(sj.recommended_next_actions);
+      const scopeSummaryLines = toArr(scopeDetailed.scope_summary_10_15_lines) as string[];
+
+      // recommendation is the single source of truth — lives at structured_json root
+      const recommendation = str(sj.recommendation) || str(ov.recommendation) || 'Pending Review';
+
+      // Console validation before save
+      console.log('[AI OUTPUT VALIDATION]', {
+        recommendation,
+        scopeLines: scopeSummaryLines.length,
+        eligibilityRows: eligRows.length,
+        technicalEvaluationRows: techEvalRows.length,
+        clarificationQuestions: clarQs.length,
+        nextActions,
+      });
 
       const rfpTitle = str(ov.rfp_title) || file.name.replace(/\.pdf$/i, '').replace(/_/g, ' ');
       const issuingAuthority = str(ov.client);
 
       const executiveSummary = [
-        str(ov.recommendation) ? `Recommendation: ${str(ov.recommendation)}` : null,
-        str(ov.one_line_reason) || null,
+        recommendation ? `Recommendation: ${recommendation}` : null,
+        str(sj.recommendation_reason) || null,
       ].filter(Boolean).join('\n\n') || null;
 
       const keyDates = importantDates
         .map(d => ({ label: str(d.event), value: str(d.date_time), notes: str(d.mode_notes) }))
         .filter(d => d.label && d.value);
 
+      // Eligibility: new schema uses criteria + eligibility_requirement_as_per_rfp
       const eligibilityCriteria = eligRows.map(row => ({
         sr_no: str(row.sr_no),
-        criteria_category: str(row.criteria_category),
-        eligibility_requirement: str(row.eligibility_requirement),
-        documents_to_be_submitted: toArr(row.documents_to_be_submitted),
+        criteria: str(row.criteria),
+        // also keep legacy key for backward compat
+        criteria_category: str(row.criteria || row.criteria_category),
+        eligibility_requirement_as_per_rfp: str(row.eligibility_requirement_as_per_rfp || row.eligibility_requirement),
+        // legacy key
+        eligibility_requirement: str(row.eligibility_requirement_as_per_rfp || row.eligibility_requirement),
+        documents_to_be_submitted: str(row.documents_to_be_submitted),
+        compliance_or_rejection_risk: str(row.compliance_or_rejection_risk),
         mandatory_or_desirable: str(row.mandatory_or_desirable),
         proposal_team_action: str(row.proposal_team_action),
         source_reference: str(row.source_reference),
       }));
 
-      const scopeOfWork = scopeWorkstreams.length > 0
-        ? scopeWorkstreams.map(ws => ({
-            workstream: str(ws.workstream),
-            what_bank_wants: str(ws.what_bank_wants),
-            deliverables: toArr(ws.deliverables),
-            timeline: str(ws.timeline),
-          }))
-        : scopeSnapshot.map(b => ({ workstream: b }));
+      // Scope: use scope_detailed as primary
+      const scopeOfWork = scopeSummaryLines.length > 0
+        ? scopeSummaryLines.map(line => ({ workstream: line }))
+        : toArr(sj.scope_of_work).map((ws: unknown) => {
+            const w = toObj(ws);
+            return { workstream: str(w.workstream), what_bank_wants: str(w.what_bank_wants), deliverables: toArr(w.deliverables), timeline: str(w.timeline) };
+          });
 
+      // Evaluation: new schema has separate tech/commercial/overall
       const evaluationCriteria = [{
-        evaluation_process: str(evalCrit.evaluation_process),
-        technical_weightage: str(evalCrit.technical_weightage),
-        commercial_weightage: str(evalCrit.commercial_weightage),
-        minimum_technical_qualifying_score: str(evalCrit.minimum_technical_qualifying_score),
-        commercial_bid_opening_rule: str(evalCrit.commercial_bid_opening_rule),
-        final_selection_method: str(evalCrit.final_selection_method),
-        special_conditions: toArr(evalCrit.special_conditions),
-        stages: toArr(evalCrit.stages),
-        detailed_scoring_table: toArr(evalCrit.detailed_scoring_table),
+        evaluation_process: str(overallEval.evaluation_process),
+        technical_weightage: str(overallEval.technical_weightage),
+        commercial_weightage: str(overallEval.commercial_weightage),
+        technical_qualifying_score: str(overallEval.technical_qualifying_score),
+        final_selection_method: str(overallEval.final_selection_method),
+        special_conditions: toArr(overallEval.special_conditions),
+        technical_evaluation_rows: techEvalRows,
+        commercial_evaluation: commercialEval,
       }];
 
       const risksAndRedFlags = redFlags.map(f => ({
@@ -235,10 +256,15 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
         .map(r => `${str(r.item)}: ${str(r.detail)}`)
         .filter(Boolean).join(' | ') || null;
 
-      // Update rfp_projects with extracted title/client
+      // Update rfp_projects with extracted title/client/recommendation
       await supabase
         .from('rfp_projects')
-        .update({ title: rfpTitle, client_name: issuingAuthority || null, status: 'completed' })
+        .update({
+          title: rfpTitle,
+          client_name: issuingAuthority || null,
+          status: 'completed',
+          recommendation,
+        })
         .eq('id', project.id);
 
       // Update ai_analysis_results with full parsed data
@@ -247,12 +273,12 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
         .update({
           status: 'completed',
           executive_summary: executiveSummary,
-          rfp_objective: str(ov.rfp_title) || null,
-          scope_summary: scopeSnapshot.slice(0, 3).join('; ') || null,
+          rfp_objective: rfpTitle || null,
+          scope_summary: scopeSummaryLines.slice(0, 5).join('; ') || null,
           eligibility_summary: eligRows.length > 0 ? `${eligRows.length} eligibility criteria extracted` : null,
           compliance_summary: null,
           commercial_summary: commercialSummary,
-          technical_summary: str(evalCrit.evaluation_process) || null,
+          technical_summary: str(overallEval.evaluation_process) || null,
           key_dates: keyDates,
           eligibility_criteria: eligibilityCriteria,
           scope_of_work: scopeOfWork,
@@ -262,7 +288,7 @@ export default function UploadPage({ onNavigate, onFileUploaded }: UploadPagePro
           risks_and_red_flags: risksAndRedFlags,
           clarification_questions: clarQs,
           win_themes: [],
-          recommended_actions: [],
+          recommended_actions: nextActions,
           full_analysis_json: analysisJson,
           confidence_score: 85,
           completed_at: new Date().toISOString(),

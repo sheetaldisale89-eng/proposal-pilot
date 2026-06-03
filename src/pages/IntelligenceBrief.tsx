@@ -219,90 +219,121 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
 
   // ─── Data extraction ────────────────────────────────────────────────────────
   const json = safeObj(analysis.full_analysis_json);
-  console.log('Full json structure:', json);
+  console.log('Full json structure keys:', Object.keys(json));
 
-  // Handles both flat format (new) and structured_json-wrapped format (old)
+  // Handles both flat (new schema) and structured_json-wrapped (old) formats
   const getVal = (key: string): unknown =>
     json[key] ?? safeObj(json.structured_json as unknown)[key];
 
-  // AI returns opportunity_overview (not rfp_snapshot); try both
-  const snap    = safeObj(getVal('opportunity_overview') ?? getVal('rfp_snapshot'));
-  const bidDesk = safeObj(getVal('bid_desk_summary'));
-  const nextSteps = safeObj(getVal('next_steps') ?? getVal('recommended_next_steps'));
-  console.log('rfp_snapshot extracted:', snap);
+  // Opportunity overview
+  const snap = safeObj(getVal('opportunity_overview') ?? getVal('rfp_snapshot'));
 
+  // Scope — new schema uses scope_detailed; old used scope_of_work + scope_snapshot
+  const scopeDetailed   = safeObj(getVal('scope_detailed'));
+  const scopeSummaryLines = safeArr<string>(scopeDetailed.scope_summary_10_15_lines);
+  const scopeDeliverables = safeArr<string>(scopeDetailed.deliverables);
+  const scopeInScope      = safeArr<string>(scopeDetailed.in_scope_items);
+  const scopeOutScope     = safeArr<string>(scopeDetailed.out_of_scope_items);
+  const scopeRisks        = safeArr<string>(scopeDetailed.scope_risks_or_ambiguities);
+
+  // Eligibility — new schema: eligibility_criteria_table with criteria + eligibility_requirement_as_per_rfp
   type EligItem = {
-    sr_no: string; criteria_category: string; eligibility_requirement: string;
-    mandatory_or_desirable: string; documents_to_be_submitted: string[];
+    sr_no: string;
+    criteria: string; criteria_category: string;
+    eligibility_requirement_as_per_rfp: string; eligibility_requirement: string;
+    documents_to_be_submitted: string | string[];
+    compliance_or_rejection_risk: string;
+    mandatory_or_desirable: string;
     proposal_team_action: string;
+    source_reference: string;
     // legacy
     criterion: string; requirement: string; mandatory: boolean; evidence_required: string; ey_assessment: string;
   };
-  type ScopeItem  = { workstream: string; what_bank_wants: string; deliverables: string[]; timeline: string };
-  type EvalItem   = { stage: string; criterion: string; sub_criterion: string; parameters: string; marks: number | string; max_marks: number | string };
-  type EvalStage  = { stage: string; description: string; qualification_rule: string };
-  type ScoringRow = { parameter: string; max_marks: number | string; notes: string };
-  type RedFlag    = { flag: string; detail: string; risk_level: string; recommended_action: string };
-  type LegalRisk  = { risk: string; detail: string; impact: string; suggested_clarification: string };
-  type ClarQ      = { question: string; section_reference: string; priority: string; why_critical: string };
-  type WinTheme   = { theme: string; rationale: string; proof_points: string };
-
   const eligibilityArr = safeArr<EligItem>(getVal('eligibility_criteria_table') ?? getVal('eligibility_criteria'));
-  const scopeArr       = safeArr<ScopeItem>(getVal('scope_of_work'));
-  const evalCritObj    = safeObj(getVal('evaluation_criteria'));
-  const evalStages     = safeArr<EvalStage>(evalCritObj.stages);
-  const scoringTable   = safeArr<ScoringRow>(evalCritObj.detailed_scoring_table);
-  const evaluationArr  = safeArr<EvalItem>(Array.isArray(getVal('evaluation_criteria')) ? getVal('evaluation_criteria') : null);
-  const redFlagsArr    = safeArr<RedFlag>(getVal('red_flags'));
-  const legalRisksArr  = safeArr<LegalRisk>(getVal('legal_commercial_risks'));
-  const clarQsArr      = safeArr<ClarQ>(getVal('clarification_questions'));
-  const winThemesArr   = safeArr<WinTheme>(getVal('win_themes'));
 
-  const isMandatory = (e: EligItem) => {
-    if (typeof e.mandatory === 'boolean') return e.mandatory !== false;
-    return safeStr(e.mandatory_or_desirable).toLowerCase() !== 'desirable';
+  // Technical evaluation — new schema: technical_evaluation_criteria (array of rows)
+  type TechEvalRow = {
+    sr_no: string;
+    evaluation_parameter_as_per_rfp: string;
+    marks_or_weightage: string;
+    minimum_requirement_or_scoring_logic: string;
+    documents_or_response_expected: string;
   };
+  const techEvalRows = safeArr<TechEvalRow>(getVal('technical_evaluation_criteria'));
 
-  const next24h        = safeArr<string>(nextSteps.within_24_hours);
-  const next3d         = safeArr<string>(nextSteps.within_3_days);
-  const nextPreBid     = safeArr<string>(nextSteps.before_pre_bid);
-  const nextSubmission = safeArr<string>(nextSteps.before_submission);
+  // Commercial + overall evaluation
+  const commercialEval = safeObj(getVal('commercial_evaluation_criteria'));
+  const overallEval    = safeObj(getVal('overall_evaluation_method'));
 
-  const recommendation   = safeStr(bidDesk.go_no_go || bidDesk.go_no_go_signal || snap.recommendation, project?.recommendation || 'Pending Analysis');
-  const goNoGoReasoning  = safeStr(bidDesk.go_no_go_reasoning || snap.one_line_reason, '');
+  // Legacy evaluation_criteria object (old schema)
+  const evalCritObj = safeObj(Array.isArray(getVal('evaluation_criteria')) ? {} : getVal('evaluation_criteria'));
+  type EvalStage  = { stage: string; description: string; qualification_rule: string };
+  const evalStages = safeArr<EvalStage>(evalCritObj.stages ?? overallEval.stages);
+
+  // Red flags, clarifications, win themes
+  type RedFlag   = { flag: string; detail: string; risk_level: string; recommended_action: string };
+  type LegalRisk = { risk: string; detail: string; impact: string; suggested_clarification: string };
+  type ClarQ     = { question: string; section_reference: string; linked_rfp_area: string; priority: string; why_critical: string; why_this_matters: string; risk_if_not_clarified: string };
+  type WinTheme  = { theme: string; rationale: string; proof_points: string };
+
+  const redFlagsArr   = safeArr<RedFlag>(getVal('red_flags'));
+  const legalRisksArr = safeArr<LegalRisk>(getVal('legal_commercial_risks'));
+  const clarQsArr     = safeArr<ClarQ>(getVal('clarification_questions'));
+  const winThemesArr  = safeArr<WinTheme>(getVal('win_themes'));
+
+  // Next actions — new schema: recommended_next_actions; old: next_steps
+  const nextActionsObj = safeObj(getVal('recommended_next_actions') ?? getVal('next_steps') ?? getVal('recommended_next_steps'));
+  const next24h        = safeArr<string>(nextActionsObj.within_24_hours);
+  const next3d         = safeArr<string>(nextActionsObj.within_3_days);
+  const nextPreBid     = safeArr<string>(nextActionsObj.before_pre_bid);
+  const nextSubmission = safeArr<string>(nextActionsObj.before_submission);
+
+  // Recommendation — single source of truth: root > opportunity_overview > bid_desk_summary
+  const bidDesk = safeObj(getVal('bid_desk_summary'));
+  const recommendation = safeStr(
+    json.recommendation || snap.recommendation ||
+    bidDesk.go_no_go || bidDesk.go_no_go_signal,
+    project?.recommendation || 'Pending Review'
+  );
+  const goNoGoReasoning  = safeStr(json.recommendation_reason as string || snap.one_line_reason as string || bidDesk.go_no_go_reasoning as string, '');
   const topRisks         = safeArr<string>(bidDesk.top_risks);
   const immediateActions = safeArr<string>(bidDesk.immediate_actions);
-  const strategicFit     = safeStr(bidDesk.strategic_fit, 'Not specified');
-  const bidComplexity    = safeStr(bidDesk.bid_complexity, 'Not specified');
-  const oneLiner         = safeStr(bidDesk.one_line_summary || snap.one_line_reason, '');
+  const oneLiner         = safeStr(json.recommendation_reason as string || snap.one_line_reason as string || bidDesk.one_line_summary as string, '');
 
-  // Eligibility summary bar
+  // Eligibility helpers
+  const isMandatory = (e: EligItem) => {
+    if (typeof e.mandatory === 'boolean') return e.mandatory !== false;
+    const md = safeStr(e.mandatory_or_desirable).toLowerCase();
+    return md !== 'desirable' && md !== 'not specified in the rfp';
+  };
   const totalCriteria  = eligibilityArr.length;
   const mandatoryCount = eligibilityArr.filter(isMandatory).length;
-  const canMeetCount   = eligibilityArr.filter(e => safeStr(e.ey_assessment).toLowerCase().startsWith('can meet')).length;
-  const atRiskCount    = eligibilityArr.filter(e => {
-    const a = safeStr(e.ey_assessment).toLowerCase();
-    return a.startsWith('cannot') || a.startsWith('partially');
-  }).length;
 
   const riskOrder = (l: string) => l.toLowerCase() === 'high' ? 0 : l.toLowerCase() === 'medium' ? 1 : 2;
   const sortedRedFlags = [...redFlagsArr].sort((a, b) => riskOrder(safeStr(a.risk_level)) - riskOrder(safeStr(b.risk_level)));
   const sortedClarQs   = [...clarQsArr].sort((a, b) => riskOrder(safeStr(a.priority)) - riskOrder(safeStr(b.priority)));
   const confidenceScore = analysis?.confidence_score ?? null;
 
-  // ─── Snapshot rows ──────────────────────────────────────────────────────────
+  // Evaluation summary fields — prefer new schema, fallback to old
+  const evalTechWeightage   = safeStr(overallEval.technical_weightage || evalCritObj.technical_weightage, '');
+  const evalCommWeightage   = safeStr(overallEval.commercial_weightage || evalCritObj.commercial_weightage || commercialEval.commercial_weightage, '');
+  const evalProcess         = safeStr(overallEval.evaluation_process || evalCritObj.evaluation_process, '');
+  const evalFinalMethod     = safeStr(overallEval.final_selection_method || evalCritObj.final_selection_method, '');
+  const evalQualScore       = safeStr(overallEval.technical_qualifying_score || evalCritObj.minimum_technical_qualifying_score, '');
+  const evalCommRule        = safeStr(commercialEval.commercial_bid_opening_rule || evalCritObj.commercial_bid_opening_rule, '');
+
+  // ─── Snapshot rows — new schema keys ───────────────────────────────────────
   const snapFields = [
     { label: 'Issuing Authority / Client',  key: 'client',               highlight: false },
     { label: 'RFP Reference Number',        key: 'rfp_reference',        highlight: false },
     { label: 'RFP Title',                   key: 'rfp_title',            highlight: false },
     { label: 'Submission Deadline',         key: 'submission_deadline',  highlight: true  },
     { label: 'Contract Duration',           key: 'contract_duration',    highlight: false },
-    { label: 'Estimated Contract Value',    key: 'contract_value',       highlight: false },
-    { label: 'EMD Amount',                  key: 'emd_amount',           highlight: false },
-    { label: 'Performance Bank Guarantee',  key: 'performance_guarantee',highlight: false },
+    { label: 'Contract Value',              key: 'contract_value',       highlight: false },
+    { label: 'EMD',                         key: 'emd',                  highlight: false },
+    { label: 'Performance Bank Guarantee',  key: 'pbg',                  highlight: false },
     { label: 'Bid Validity',                key: 'bid_validity',         highlight: false },
     { label: 'Submission Mode',             key: 'submission_mode',      highlight: false },
-    { label: 'Recommendation',              key: 'recommendation',       highlight: false },
   ];
 
   return (
@@ -397,71 +428,85 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
             )}
 
             {/* ══ 02. SCOPE OF WORK ═════════════════════════════════════════ */}
-            {scopeArr.length > 0 && (
+            {(scopeSummaryLines.length > 0 || scopeDeliverables.length > 0) && (
             <section id="section-scope">
               <SectionHeader number="02" title="Scope of Work" />
               <div className="space-y-5">
-                  {scopeArr.map((ws, i) => (
-                    <div key={i} className="rounded-2xl p-6"
-                      style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
-                      {/* Title */}
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center font-mono font-bold text-xs flex-shrink-0"
-                          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00E5FF' }}>
-                          {String(i + 1).padStart(2, '0')}
-                        </div>
-                        <h3 className="font-semibold text-base text-text-primary">{safeStr(ws.workstream, 'Workstream')}</h3>
-                      </div>
 
-                      {/* What bank wants */}
-                      <div className="mb-4">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#00E5FF' }}>What the Bank Wants</div>
-                        <p className="text-text-secondary text-sm leading-relaxed">{safeStr(ws.what_bank_wants)}</p>
-                      </div>
+                {/* Detailed scope summary — 10-15 lines */}
+                {scopeSummaryLines.length > 0 && (
+                  <div className="rounded-2xl p-6" style={{ background: '#08111F', border: '1px solid rgba(0,229,255,0.1)' }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider mb-4" style={{ color: '#00E5FF' }}>What the Bank Wants</div>
+                    <ul className="space-y-2.5">
+                      {scopeSummaryLines.map((line, i) => (
+                        <li key={i} className="flex items-start gap-3 text-sm text-text-secondary leading-relaxed">
+                          <span className="font-mono text-[10px] mt-1 flex-shrink-0 opacity-40">{String(i + 1).padStart(2, '0')}</span>
+                          {safeStr(line)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-                      {/* Deliverables */}
-                      {safeArr<string>(ws.deliverables).length > 0 && (
-                        <div className="mb-4">
-                          <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-text-muted">Key Deliverables</div>
-                          <ul className="space-y-1.5">
-                            {safeArr<string>(ws.deliverables).map((d, j) => (
-                              <li key={j} className="flex items-start gap-2 text-sm text-text-secondary">
-                                <span style={{ color: '#00E5FF' }} className="mt-1 flex-shrink-0">•</span>
-                                {safeStr(d)}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                {/* Key deliverables */}
+                {scopeDeliverables.length > 0 && (
+                  <div className="rounded-2xl p-6" style={{ background: '#08111F', border: '1px solid rgba(255,209,102,0.1)' }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider mb-4" style={{ color: '#FFD166' }}>Key Deliverables</div>
+                    <ul className="space-y-2">
+                      {scopeDeliverables.map((d, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
+                          <span style={{ color: '#FFD166' }} className="mt-1 flex-shrink-0">•</span>
+                          {safeStr(d)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-                      {/* Timeline */}
-                      <div className="flex items-center gap-2 text-xs mb-3">
-                        <span className="text-text-muted uppercase tracking-wider">Timeline:</span>
-                        <span className="font-medium" style={{ color: safeStr(ws.timeline, '') && ws.timeline !== 'Not specified' ? '#FFD166' : '#4A5568' }}>
-                          {safeStr(ws.timeline, 'Not specified')}
-                        </span>
+                {/* In-scope / Out-of-scope */}
+                {(scopeInScope.length > 0 || scopeOutScope.length > 0) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    {scopeInScope.length > 0 && (
+                      <div className="rounded-xl p-5" style={{ background: '#08111F', border: '1px solid rgba(0,245,160,0.1)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color: '#00F5A0' }}>In Scope</div>
+                        <ul className="space-y-1.5">
+                          {scopeInScope.map((item, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-text-secondary">
+                              <span style={{ color: '#00F5A0' }} className="mt-0.5 flex-shrink-0">✓</span>
+                              {safeStr(item)}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
+                    )}
+                    {scopeOutScope.length > 0 && scopeOutScope[0] !== 'Not specified in the RFP' && (
+                      <div className="rounded-xl p-5" style={{ background: '#08111F', border: '1px solid rgba(255,77,109,0.1)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color: '#FF4D6D' }}>Out of Scope</div>
+                        <ul className="space-y-1.5">
+                          {scopeOutScope.map((item, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-text-secondary">
+                              <span style={{ color: '#FF4D6D' }} className="mt-0.5 flex-shrink-0">✗</span>
+                              {safeStr(item)}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                      {/* EY implication */}
-                      <div className="rounded-lg px-4 py-2.5" style={{ background: 'rgba(255,209,102,0.04)', border: '1px solid rgba(255,209,102,0.1)' }}>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider mr-2" style={{ color: '#FFD166' }}>What This Means for EY:</span>
-                        <span className="text-xs text-text-muted italic">
-                          {(() => {
-                            const w = safeStr(ws.workstream).toLowerCase();
-                            const b = safeStr(ws.what_bank_wants).toLowerCase();
-                            if (w.includes('audit') || b.includes('audit')) return 'Requires dedicated audit capability and prior banking sector audit engagements.';
-                            if (w.includes('digital') || b.includes('digital')) return 'Digital transformation credentials and technology partner network will be critical differentiators.';
-                            if (w.includes('risk') || b.includes('risk')) return 'Enterprise risk management practice must lead this workstream with BFSI-specific risk frameworks.';
-                            if (w.includes('compliance') || b.includes('compliance') || w.includes('regul') || b.includes('regul')) return 'Regulatory compliance expertise and RBI/SEBI/IRDAI experience must be front and center.';
-                            if (w.includes('technology') || b.includes('technology') || w.includes('it ') || b.includes(' it ')) return 'Technology advisory team with core banking implementation experience is essential.';
-                            if (w.includes('strategy') || b.includes('strategy')) return 'Senior partner-led engagement with strategy practice; requires board-level banking relationships.';
-                            if (w.includes('hr') || b.includes('human resource') || b.includes('talent')) return 'People advisory practice with banking sector HR transformation track record needed.';
-                            return 'Cross-functional team required spanning advisory, technology, and domain-specific banking expertise.';
-                          })()}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                {/* Scope risks */}
+                {scopeRisks.length > 0 && (
+                  <div className="rounded-xl p-4" style={{ background: 'rgba(255,176,32,0.04)', border: '1px solid rgba(255,176,32,0.15)' }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#FFB020' }}>Scope Risks / Ambiguities</div>
+                    <ul className="space-y-1">
+                      {scopeRisks.map((r, i) => (
+                        <li key={i} className="text-xs text-text-muted leading-relaxed">• {safeStr(r)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
               </div>
             </section>
             )}
@@ -472,15 +517,13 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
               <SectionHeader number="03" title="Eligibility & Compliance" />
               <>
                   {/* Summary bar */}
-                  <div className="grid grid-cols-4 gap-3 mb-6">
+                  <div className="grid grid-cols-2 gap-3 mb-6">
                     {[
                       { label: 'Total Criteria', value: totalCriteria, color: '#00E5FF' },
                       { label: 'Mandatory',       value: mandatoryCount, color: '#FF4D6D' },
-                      { label: 'Can Meet',         value: canMeetCount,   color: '#00F5A0' },
-                      { label: 'At Risk',          value: atRiskCount,    color: '#FFB020' },
                     ].map(stat => (
                       <div key={stat.label} className="rounded-xl p-4 text-center"
-                        style={{ background: '#08111F', border: `1px solid rgba(${stat.color === '#00E5FF' ? '0,229,255' : stat.color === '#FF4D6D' ? '255,77,109' : stat.color === '#00F5A0' ? '0,245,160' : '255,176,32'},0.2)` }}>
+                        style={{ background: '#08111F', border: `1px solid rgba(${stat.color === '#00E5FF' ? '0,229,255' : '255,77,109'},0.2)` }}>
                         <div className="text-2xl font-bold font-mono mb-1" style={{ color: stat.color }}>{stat.value}</div>
                         <div className="text-[10px] text-text-muted uppercase tracking-wider">{stat.label}</div>
                       </div>
@@ -493,17 +536,20 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                       <table className="w-full text-xs">
                         <thead>
                           <tr style={{ background: '#08111F', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                            {['#', 'Category / Criterion', 'Exact Requirement', 'Type', 'Documents Required', 'Proposal Team Action'].map(h => (
+                            {['#', 'Category / Criterion', 'Exact Requirement', 'Type', 'Documents Required', 'Risk / Status', 'Proposal Team Action'].map(h => (
                               <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-text-muted font-semibold whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {eligibilityArr.map((item, i) => {
-                            const category    = safeStr(item.criteria_category || item.criterion, `Criterion ${i + 1}`);
-                            const requirement = safeStr(item.eligibility_requirement || item.requirement);
-                            const docs        = safeArr<string>(item.documents_to_be_submitted).join(', ') || safeStr(item.evidence_required, '—');
+                            const category    = safeStr(item.criteria || item.criteria_category || item.criterion, `Criterion ${i + 1}`);
+                            const requirement = safeStr(item.eligibility_requirement_as_per_rfp || item.eligibility_requirement || item.requirement);
+                            const docsRaw     = item.documents_to_be_submitted;
+                            const docs        = Array.isArray(docsRaw) ? docsRaw.join(', ') : safeStr(docsRaw || item.evidence_required, '—');
+                            const risk        = safeStr(item.compliance_or_rejection_risk, '');
                             const action      = safeStr(item.proposal_team_action, '—');
+                            const isRejRisk   = risk.toLowerCase().includes('rejection');
                             return (
                               <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)' }}>
                                 <td className="px-4 py-3 font-mono text-text-muted align-top">{safeStr(item.sr_no, String(i + 1))}</td>
@@ -511,6 +557,14 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                                 <td className="px-4 py-3 text-text-secondary align-top" style={{ minWidth: 220 }}>{requirement}</td>
                                 <td className="px-4 py-3 align-top whitespace-nowrap"><MandatoryBadge mandatory={isMandatory(item)} /></td>
                                 <td className="px-4 py-3 text-text-muted align-top" style={{ minWidth: 180 }}>{docs}</td>
+                                <td className="px-4 py-3 align-top whitespace-nowrap">
+                                  {risk && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold"
+                                      style={{ background: isRejRisk ? 'rgba(255,77,109,0.1)' : 'rgba(255,176,32,0.1)', color: isRejRisk ? '#FF4D6D' : '#FFB020' }}>
+                                      {risk}
+                                    </span>
+                                  )}
+                                </td>
                                 <td className="px-4 py-3 text-text-muted align-top" style={{ minWidth: 200 }}>{action}</td>
                               </tr>
                             );
@@ -524,30 +578,70 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
             )}
 
             {/* ══ 04. EVALUATION CRITERIA ═══════════════════════════════════ */}
-            {(evalStages.length > 0 || Object.keys(evalCritObj).length > 0 || evaluationArr.length > 0) && (
+            {(techEvalRows.length > 0 || evalProcess || evalTechWeightage || evalCommWeightage || evalStages.length > 0) && (
             <section id="section-evaluation">
               <SectionHeader number="04" title="Evaluation Criteria" />
               <div className="space-y-6">
-                {evalCritObj.evaluation_process && (
-                  <div className="rounded-xl p-5" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-text-muted">Evaluation Process</div>
-                    <p className="text-text-secondary text-sm leading-relaxed">{safeStr(evalCritObj.evaluation_process)}</p>
+
+                {/* Overall eval summary pills */}
+                {(evalTechWeightage || evalCommWeightage || evalQualScore || evalFinalMethod || evalProcess) && (
+                  <div className="space-y-4">
+                    {evalProcess && evalProcess !== 'Not specified in the RFP' && (
+                      <div className="rounded-xl p-5" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-text-muted">Evaluation Process</div>
+                        <p className="text-text-secondary text-sm leading-relaxed">{evalProcess}</p>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                      {[
+                        { label: 'Technical Weightage',             val: evalTechWeightage,  color: '#00E5FF' },
+                        { label: 'Commercial Weightage',            val: evalCommWeightage,  color: '#FFD166' },
+                        { label: 'Min. Technical Qualifying Score', val: evalQualScore,      color: '#00F5A0' },
+                        { label: 'Commercial Bid Opening',          val: evalCommRule,       color: '#9CAEC4' },
+                        { label: 'Final Selection Method',          val: evalFinalMethod,    color: '#9CAEC4' },
+                      ].filter(p => p.val && p.val !== 'Not specified in the RFP').map(p => (
+                        <div key={p.label} className="rounded-xl px-4 py-3 flex flex-col gap-0.5"
+                          style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          <span className="text-[10px] uppercase tracking-wider text-text-muted">{p.label}</span>
+                          <span className="font-bold text-sm" style={{ color: p.color }}>{p.val}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-                <div className="flex flex-wrap gap-3">
-                  {[
-                    { label: 'Technical Weightage',             val: evalCritObj.technical_weightage,               color: '#00E5FF' },
-                    { label: 'Commercial Weightage',            val: evalCritObj.commercial_weightage,              color: '#FFD166' },
-                    { label: 'Min. Technical Qualifying Score', val: evalCritObj.minimum_technical_qualifying_score, color: '#00F5A0' },
-                    { label: 'Final Selection',                 val: evalCritObj.final_selection_method,            color: '#9CAEC4' },
-                  ].filter(p => p.val && p.val !== 'Not specified in the RFP').map(p => (
-                    <div key={p.label} className="rounded-xl px-4 py-3 flex flex-col gap-0.5"
-                      style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <span className="text-[10px] uppercase tracking-wider text-text-muted">{p.label}</span>
-                      <span className="font-bold text-sm" style={{ color: p.color }}>{safeStr(p.val)}</span>
+
+                {/* Technical evaluation criteria table — new schema */}
+                {techEvalRows.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Technical Evaluation Parameters</div>
+                    <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr style={{ background: '#08111F', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                              {['#', 'Evaluation Parameter', 'Marks / Weightage', 'Scoring Logic / Min. Requirement', 'Documents / Response Expected'].map(h => (
+                                <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-text-muted font-semibold whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {techEvalRows.map((row, i) => (
+                              <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)' }}>
+                                <td className="px-4 py-3 font-mono text-text-muted align-top">{safeStr(row.sr_no, String(i + 1))}</td>
+                                <td className="px-4 py-3 font-semibold text-text-primary align-top" style={{ minWidth: 200 }}>{safeStr(row.evaluation_parameter_as_per_rfp)}</td>
+                                <td className="px-4 py-3 font-mono font-bold align-top whitespace-nowrap" style={{ color: '#00E5FF' }}>{safeStr(row.marks_or_weightage, '—')}</td>
+                                <td className="px-4 py-3 text-text-secondary align-top" style={{ minWidth: 200 }}>{safeStr(row.minimum_requirement_or_scoring_logic, '—')}</td>
+                                <td className="px-4 py-3 text-text-muted align-top" style={{ minWidth: 180 }}>{safeStr(row.documents_or_response_expected, '—')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {/* Legacy evaluation stages (old schema) */}
                 {evalStages.length > 0 && (
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Evaluation Stages</div>
@@ -573,67 +667,7 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                     </div>
                   </div>
                 )}
-                {scoringTable.length > 0 && (
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wider mb-3 text-text-muted">Detailed Scoring Parameters</div>
-                    <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr style={{ background: '#08111F', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                            {['Parameter', 'Max Marks', 'Notes'].map(h => (
-                              <th key={h} className="px-4 py-3 text-left text-[10px] uppercase tracking-wider text-text-muted font-semibold">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {scoringTable.map((row, i) => (
-                            <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'rgba(8,17,31,0.8)' : 'rgba(15,27,46,0.4)' }}>
-                              <td className="px-4 py-3 text-text-primary align-top">{safeStr(row.parameter)}</td>
-                              <td className="px-4 py-3 font-mono font-bold align-top" style={{ color: '#00E5FF' }}>{safeStr(String(row.max_marks))}</td>
-                              <td className="px-4 py-3 text-text-muted align-top">{safeStr(row.notes, '—')}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-                {evaluationArr.length > 0 && evalStages.length === 0 && (
-                  <div className="space-y-4">
-                    {evaluationArr.map((item, i) => {
-                      const marks = Number(item.marks) || 0;
-                      const maxMarks = Number(item.max_marks) || 0;
-                      const pct = maxMarks > 0 ? Math.round((marks / maxMarks) * 100) : 0;
-                      const stageLower = safeStr(item.stage).toLowerCase();
-                      const stageColor = stageLower.includes('fin') ? '#FFD166' : '#00E5FF';
-                      return (
-                        <div key={i} className="rounded-2xl p-6" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                          <div className="flex items-center gap-2 mb-3">
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase"
-                              style={{ background: stageLower.includes('fin') ? 'rgba(255,209,102,0.1)' : 'rgba(0,229,255,0.1)', color: stageColor }}>
-                              {safeStr(item.stage, '—').toUpperCase()}
-                            </span>
-                          </div>
-                          <h3 className="font-semibold text-base text-text-primary mb-1">{safeStr(item.criterion, '—')}</h3>
-                          {item.sub_criterion && <p className="text-text-muted text-sm mb-4">{safeStr(item.sub_criterion)}</p>}
-                          {maxMarks > 0 && (
-                            <div>
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs text-text-muted">Marks</span>
-                                <span className="text-sm font-bold font-mono" style={{ color: stageColor }}>
-                                  {marks} <span className="text-text-muted font-normal">/ {maxMarks}</span>
-                                </span>
-                              </div>
-                              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: stageColor }} />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+
               </div>
             </section>
             )}
@@ -714,11 +748,25 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                           <p className="font-semibold text-sm text-text-primary leading-snug">{safeStr(q.question)}</p>
                           {q.priority && <PriorityBadge priority={safeStr(q.priority)} />}
                         </div>
-                        {q.section_reference && (
-                          <p className="text-[10px] text-text-muted mb-1">Section: {safeStr(q.section_reference)}</p>
+                        {/* New schema: linked_rfp_area; legacy: section_reference */}
+                        {(q.linked_rfp_area || q.section_reference) && (
+                          <p className="text-[10px] text-text-muted mb-1.5">
+                            RFP Area: {safeStr(q.linked_rfp_area || q.section_reference)}
+                          </p>
                         )}
-                        {q.why_critical && (
-                          <p className="text-xs text-text-muted italic">{safeStr(q.why_critical)}</p>
+                        {/* New schema: why_this_matters; legacy: why_critical */}
+                        {(q.why_this_matters || q.why_critical) && (
+                          <p className="text-xs text-text-muted italic mb-1">
+                            {safeStr(q.why_this_matters || q.why_critical)}
+                          </p>
+                        )}
+                        {q.risk_if_not_clarified && (
+                          <div className="mt-2 flex items-start gap-1.5">
+                            <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: '#FFB020' }} />
+                            <p className="text-[10px] text-text-muted" style={{ color: '#FFB020' }}>
+                              Risk: {safeStr(q.risk_if_not_clarified)}
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -835,24 +883,6 @@ export default function IntelligenceBrief({ onNavigate, project }: IntelligenceB
                     </div>
                   )}
 
-                  {(strategicFit !== 'Not specified' || bidComplexity !== 'Not specified') && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-xl p-4" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2">Strategic Fit</div>
-                        <ComplexityDot level={strategicFit.split('—')[0].trim()} />
-                        {strategicFit.includes('—') && (
-                          <p className="text-[10px] text-text-muted mt-1">{strategicFit.split('—').slice(1).join('—').trim()}</p>
-                        )}
-                      </div>
-                      <div className="rounded-xl p-4" style={{ background: '#08111F', border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2">Bid Complexity</div>
-                        <ComplexityDot level={bidComplexity.split('—')[0].trim()} />
-                        {bidComplexity.includes('—') && (
-                          <p className="text-[10px] text-text-muted mt-1">{bidComplexity.split('—').slice(1).join('—').trim()}</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* Right 40% — sticky action card */}
